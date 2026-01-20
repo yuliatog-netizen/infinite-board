@@ -3,265 +3,270 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Infinite Board PRO v2.3</title>
+    <title>Infinite Board v3.3 (Video Cloud Ready)</title>
     <style>
-        :root { --bg: #f0f0f0; --panel: #ffffff; --accent: #007bff; --text: #333; --danger: #dc3545; }
+        :root { --bg: #f0f0f0; --panel: #ffffff; --accent: #007bff; --text: #333; }
         [data-theme="dark"] { --bg: #1a1a1a; --panel: #333; --accent: #007bff; --text: #eee; }
-
-        body, html { margin: 0; padding: 0; height: 100%; overflow: hidden; background: var(--bg); font-family: sans-serif; transition: 0.3s; touch-action: none; }
+        body, html { margin: 0; padding: 0; height: 100%; overflow: hidden; background: var(--bg); font-family: sans-serif; touch-action: none; }
         
         #ui-layer { position: fixed; top: 0; left: 0; width: 100%; pointer-events: none; z-index: 100; display: flex; flex-direction: column; align-items: center; }
-        .panel { 
-            pointer-events: auto; background: var(--panel); padding: 5px 12px; 
-            border-radius: 30px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); 
-            display: flex; gap: 6px; align-items: center; margin: 8px;
-            border: 1px solid rgba(0,0,0,0.1); flex-wrap: wrap; justify-content: center;
-        }
-
-        button { 
-            background: #eee; border: none; padding: 6px 10px; border-radius: 15px; 
-            cursor: pointer; font-size: 13px; transition: 0.2s; color: #333;
-        }
-        [data-theme="dark"] button { background: #444; color: #eee; }
+        .panel { pointer-events: auto; background: var(--panel); padding: 5px 12px; border-radius: 30px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); display: flex; gap: 6px; align-items: center; margin: 8px; border: 1px solid rgba(0,0,0,0.1); }
+        
+        #sidebar { position: fixed; top: 60px; left: 10px; width: 220px; background: var(--panel); border-radius: 15px; padding: 15px; pointer-events: auto; box-shadow: 0 4px 15px rgba(0,0,0,0.1); transform: translateX(-250px); transition: 0.3s; z-index: 101; max-height: 80vh; overflow-y: auto; }
+        #sidebar.open { transform: translateX(0); }
+        
+        .board-item { padding: 10px; border-radius: 8px; cursor: pointer; margin-bottom: 5px; color: var(--text); border: 1px solid transparent; }
+        .board-item.active { border-color: var(--accent); background: rgba(0,123,255,0.1); }
+        
+        #login-screen { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: var(--bg); z-index: 2000; display: flex; justify-content: center; align-items: center; flex-direction: column; }
+        
+        button { background: #eee; border: none; padding: 8px 12px; border-radius: 15px; cursor: pointer; color: #333; transition: 0.2s; }
+        button:hover { background: #ddd; }
         button.active { background: var(--accent) !important; color: white !important; }
         
         #canvas { display: block; }
-        #text-input { position: fixed; display: none; background: white; border: 2px solid var(--accent); z-index: 1000; outline: none; padding: 5px; color: black; }
+        .sync-indicator { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-left: 5px; }
     </style>
 </head>
 <body data-theme="light">
 
-<div id="ui-layer">
+<div id="login-screen">
+    <h1 style="color:var(--text)">Infinite Board</h1>
+    <button onclick="login()" style="font-size:18px; padding: 15px 30px; background: #4285F4; color: white; border-radius: 5px;">Войти через Google</button>
+</div>
+
+<div id="ui-layer" style="display:none;">
     <div class="panel">
-        <button onclick="toggleTheme()">🌓</button>
+        <button onclick="toggleSidebar()">☰ Проекты</button>
         <button id="mode-move" class="active" onclick="setMode('move')">🖐️</button>
         <button id="mode-draw" onclick="setMode('draw')">✏️</button>
         <button id="mode-eraser" onclick="setMode('eraser')">🧽</button>
-        <button id="mode-text" onclick="setMode('text')">TXT</button>
-        <hr style="width:1px; height:20px; border:none; background:#ccc;">
-        <button onclick="undo()">↩️</button>
-        <button onclick="redo()">↪️</button>
         <hr style="width:1px; height:20px; border:none; background:#ccc;">
         <input type="file" id="file-input" hidden accept="image/*,video/*" onchange="handleFile(event)">
-        <button onclick="document.getElementById('file-input').click()">➕</button>
-        <button id="snap-btn" onclick="takeSnapshot()" style="display:none;">📸 Кадр</button>
-        <button class="danger" onclick="deleteSelected()">🗑️</button>
+        <button onclick="document.getElementById('file-input').click()">➕ Медиа (Cloud)</button>
+        <button id="snap-btn" onclick="takeSnapshot()" style="display:none;">📸</button>
+        <button onclick="deleteSelected()" style="color:red">🗑️</button>
+        <div id="status-dot" class="sync-indicator" style="background: green;"></div>
     </div>
 </div>
 
-<div id="text-input" contenteditable="true"></div>
+<div id="sidebar">
+    <h3 style="color:var(--text); margin-top:0;">Мои Доски</h3>
+    <button onclick="createNewBoard()" style="width:100%; margin-bottom:10px; background:var(--accent); color:white;">+ Создать доску</button>
+    <div id="boards-list"></div>
+    <button onclick="logout()" style="width:100%; margin-top:20px; background:#fdd;">Выйти</button>
+</div>
+
 <canvas id="canvas"></canvas>
 
-<script>
-    const canvas = document.getElementById('canvas');
-    const ctx = canvas.getContext('2d');
-    const textInput = document.getElementById('text-input');
+<script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+    import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+    import { getFirestore, doc, onSnapshot, collection, addDoc, query, where, getDocs, updateDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
-    let state = {
-        mode: 'move', theme: 'light',
-        camera: { x: window.innerWidth/2, y: window.innerHeight/2, zoom: 1 },
-        objects: [], lines: [],
-        selectedObj: null,
-        history: [], historyIdx: -1
+    // --- НАСТРОЙКИ (ОБНОВЛЕНО) ---
+    const CLOUDINARY_NAME = "dacvtrygp"; 
+    const CLOUDINARY_PRESET = "ml_default"; 
+
+    const firebaseConfig = {
+        apiKey: "AIzaSyAYZY3gBo7uT-MSmgXnsZn3Y_q2zzU4OAM",
+        authDomain: "infiniteboard-3197d.firebaseapp.com",
+        projectId: "infiniteboard-3197d",
+        storageBucket: "infiniteboard-3197d.firebasestorage.app",
+        messagingSenderId: "786069509066",
+        appId: "1:786069509066:web:ab900d2d7c952195067533"
     };
 
-    function init() {
-        window.addEventListener('resize', resize);
-        window.addEventListener('keydown', handleKeys);
-        resize();
-        saveHistory(); // Начальная точка
-        render();
-    }
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getFirestore(app);
 
-    function handleKeys(e) {
-        if (e.ctrlKey && e.code === 'KeyZ') { e.preventDefault(); undo(); }
-        if (e.ctrlKey && e.code === 'KeyY') { e.preventDefault(); redo(); }
-    }
+    let currentUser = null, currentBoardId = null, unsubscribeBoard = null;
 
-    // --- СИСТЕМА ИСТОРИИ (Undo/Redo) ---
-    function saveHistory() {
-        // Удаляем "будущее", если мы сделали новое действие после Undo
-        if (state.historyIdx < state.history.length - 1) {
-            state.history = state.history.slice(0, state.historyIdx + 1);
+    window.login = () => signInWithPopup(auth, new GoogleAuthProvider());
+    window.logout = () => signOut(auth);
+
+    onAuthStateChanged(auth, (user) => {
+        if (user) {
+            currentUser = user;
+            document.getElementById('login-screen').style.display = 'none';
+            document.getElementById('ui-layer').style.display = 'flex';
+            loadBoardsList();
+        } else {
+            document.getElementById('login-screen').style.display = 'flex';
+            document.getElementById('ui-layer').style.display = 'none';
         }
-        // Сохраняем копию объектов
-        const snapshot = JSON.stringify({ 
-            objects: state.objects.map(o => ({...o, el: null})), // Картинки не сериализуем
-            lines: state.lines 
+    });
+
+    async function loadBoardsList() {
+        const q = query(collection(db, "boards"), where("ownerId", "==", currentUser.uid));
+        const snap = await getDocs(q);
+        const list = document.getElementById('boards-list'); list.innerHTML = '';
+        snap.forEach(d => {
+            const item = document.createElement('div');
+            item.className = `board-item ${currentBoardId === d.id ? 'active' : ''}`;
+            item.innerText = d.data().name || "Без названия";
+            item.onclick = () => openBoard(d.id);
+            list.appendChild(item);
         });
-        state.history.push(snapshot);
-        if (state.history.length > 30) state.history.shift(); // Лимит 30 шагов
-        state.historyIdx = state.history.length - 1;
+        if (!currentBoardId && !snap.empty) openBoard(snap.docs[0].id);
     }
 
-    function undo() {
-        if (state.historyIdx > 0) {
-            state.historyIdx--;
-            applyHistory();
-        }
-    }
+    window.createNewBoard = async () => {
+        const name = prompt("Имя доски:", "Новая доска");
+        if (!name) return;
+        const ref = await addDoc(collection(db, "boards"), { name, ownerId: currentUser.uid, objects: [], lines: [] });
+        openBoard(ref.id);
+    };
 
-    function redo() {
-        if (state.historyIdx < state.history.length - 1) {
-            state.historyIdx++;
-            applyHistory();
-        }
-    }
-
-    function applyHistory() {
-        const data = JSON.parse(state.history[state.historyIdx]);
-        // Восстанавливаем линии
-        state.lines = data.lines;
-        // Сложная часть: восстанавливаем объекты, сохраняя ссылки на элементы (картинки/видео)
-        state.objects = data.objects.map(oldObj => {
-            const existing = state.objects.find(o => o.type === oldObj.type && o.x === oldObj.x);
-            return existing ? { ...oldObj, el: existing.el } : oldObj;
+    function openBoard(id) {
+        if (unsubscribeBoard) unsubscribeBoard();
+        currentBoardId = id;
+        unsubscribeBoard = onSnapshot(doc(db, "boards", id), (d) => {
+            if (d.exists() && !state.isDragging && !state.isDrawing && !state.isResizing) {
+                const data = d.data();
+                state.lines = data.lines || [];
+                state.objects = (data.objects || []).map(obj => {
+                    const existing = state.objects.find(o => o.url === obj.url);
+                    if (existing) return { ...obj, el: existing.el };
+                    if (obj.type === 'image') {
+                        const img = new Image(); img.src = obj.url; img.crossOrigin = "anonymous";
+                        return { ...obj, el: img };
+                    } else if (obj.type === 'video') {
+                        const vid = document.createElement('video'); vid.src = obj.url; 
+                        vid.muted = true; vid.loop = true; vid.crossOrigin = "anonymous";
+                        return { ...obj, el: vid };
+                    }
+                    return obj;
+                });
+                render();
+            }
         });
-        render();
+        loadBoardsList();
+        document.getElementById('sidebar').classList.remove('open');
     }
 
-    // --- ФУНКЦИИ МЕДИА ---
-    function handleFile(e) {
+    let saveTimeout;
+    function triggerSave() {
+        document.getElementById('status-dot').style.background = 'orange';
+        clearTimeout(saveTimeout);
+        saveTimeout = setTimeout(async () => {
+            if (!currentBoardId) return;
+            const objectsToSave = state.objects.map(({el, ...rest}) => rest);
+            await updateDoc(doc(db, "boards", currentBoardId), { objects: objectsToSave, lines: state.lines });
+            document.getElementById('status-dot').style.background = 'green';
+        }, 1000);
+    }
+
+    window.handleFile = async (e) => {
         const file = e.target.files[0];
         if (!file) return;
-        const url = URL.createObjectURL(file);
-        const pos = { x: (window.innerWidth/2 - state.camera.x)/state.camera.zoom, y: (window.innerHeight/2 - state.camera.y)/state.camera.zoom };
 
-        if (file.type.startsWith('image')) {
-            const img = new Image(); img.src = url;
-            img.onload = () => { addObj({ type: 'image', x: pos.x, y: pos.y, w: img.width/2, h: img.height/2, el: img, ratio: img.width/img.height }); };
-        } else {
-            const video = document.createElement('video'); video.src = url; video.muted = true; video.loop = true;
-            video.onloadeddata = () => { addObj({ type: 'video', x: pos.x, y: pos.y, w: 320, h: 180, el: video, ratio: 320/180 }); };
-        }
-    }
+        document.getElementById('status-dot').style.background = 'blue'; 
+        
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('upload_preset', CLOUDINARY_PRESET);
 
-    function addObj(obj) {
-        state.objects.push(obj);
-        saveHistory();
-        render();
-    }
+        try {
+            const response = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_NAME}/auto/upload`, {
+                method: 'POST', body: formData
+            });
+            const data = await response.json();
+            const url = data.secure_url;
+            const pos = { x: (window.innerWidth/2 - state.camera.x)/state.camera.zoom, y: (window.innerHeight/2 - state.camera.y)/state.camera.zoom };
 
-    // СКРИНШОТ ВИДЕО (Киллер-фича)
-    function takeSnapshot() {
-        if (state.selectedObj && state.selectedObj.type === 'video') {
-            const video = state.selectedObj.el;
-            const tempCanvas = document.createElement('canvas');
-            tempCanvas.width = video.videoWidth;
-            tempCanvas.height = video.videoHeight;
-            tempCanvas.getContext('2d').drawImage(video, 0, 0);
-            
-            const img = new Image();
-            img.src = tempCanvas.toDataURL('image/png');
-            img.onload = () => {
-                addObj({ 
-                    type: 'image', x: state.selectedObj.x + 20, y: state.selectedObj.y + 20, 
-                    w: state.selectedObj.w, h: state.selectedObj.h, el: img, ratio: state.selectedObj.ratio 
-                });
-            };
-        }
-    }
+            if (file.type.startsWith('image')) {
+                const img = new Image(); img.src = url; img.crossOrigin = "anonymous";
+                img.onload = () => {
+                    state.objects.push({ type: 'image', x: pos.x, y: pos.y, w: img.width/2, h: img.height/2, url, ratio: img.width/img.height, el: img });
+                    render(); triggerSave();
+                };
+            } else {
+                const vid = document.createElement('video'); vid.src = url; vid.muted = true; vid.loop = true; vid.crossOrigin = "anonymous";
+                vid.onloadeddata = () => {
+                    state.objects.push({ type: 'video', x: pos.x, y: pos.y, w: 320, h: 180, url, ratio: 1.77, el: vid });
+                    render(); triggerSave();
+                };
+            }
+        } catch (err) { alert("Ошибка загрузки. Проверь настройки Cloudinary."); }
+    };
 
-    // --- ОСНОВНОЙ ЦИКЛ ---
-    function setMode(m) {
-        state.mode = m;
-        document.querySelectorAll('.panel button').forEach(b => b.classList.remove('active'));
-        document.getElementById('mode-' + m).classList.add('active');
-    }
+    // --- CANVAS LOGIC ---
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    let state = { mode: 'move', camera: { x: window.innerWidth/2, y: window.innerHeight/2, zoom: 1 }, objects: [], lines: [], selectedObj: null };
+
+    window.toggleSidebar = () => document.getElementById('sidebar').classList.toggle('open');
+    window.setMode = (m) => { 
+        state.mode = m; 
+        document.querySelectorAll('.panel button').forEach(b => b.classList.remove('active')); 
+        const btn = document.getElementById('mode-'+m);
+        if(btn) btn.classList.add('active'); 
+    };
+    window.deleteSelected = () => { if(state.selectedObj) { state.objects = state.objects.filter(o=>o!==state.selectedObj); state.selectedObj=null; render(); triggerSave(); } };
+
+    function resize() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; render(); }
+    window.addEventListener('resize', resize);
+    resize();
 
     canvas.onpointerdown = (e) => {
-        const mouse = { x: e.clientX, y: e.clientY };
-        const world = { x: (mouse.x - state.camera.x)/state.camera.zoom, y: (mouse.y - state.camera.y)/state.camera.zoom };
-        state.lastMouse = mouse;
-
+        const m = { x: e.clientX, y: e.clientY };
+        const w = { x: (m.x - state.camera.x)/state.camera.zoom, y: (m.y - state.camera.y)/state.camera.zoom };
+        state.lastMouse = m;
         if (state.mode === 'draw' || state.mode === 'eraser') {
             state.isDrawing = true;
-            if (state.mode === 'draw') state.lines.push({ points: [world], color: state.theme === 'light' ? '#000' : '#fff' });
+            if (state.mode === 'draw') state.lines.push({ points: [w], color: '#000' });
             return;
         }
-
-        const hit = [...state.objects].reverse().find(o => world.x > o.x && world.x < o.x + o.w && world.y > o.y && world.y < o.y + o.h);
-        
+        const hit = [...state.objects].reverse().find(o => w.x > o.x && w.x < o.x + o.w && w.y > o.y && w.y < o.y + o.h);
         if (hit) {
             state.selectedObj = hit;
-            state.isDragging = true;
-            document.getElementById('snap-btn').style.display = (hit.type === 'video') ? 'inline-block' : 'none';
-            
-            // Проверка на ресайз (правый нижний угол)
             const s = 20 / state.camera.zoom;
-            if (world.x > hit.x + hit.w - s && world.y > hit.y + hit.h - s) {
-                state.isResizing = true;
-                state.isDragging = false;
-            } else if (hit.type === 'video') {
-                hit.el.paused ? hit.el.play() : hit.el.pause();
+            if (w.x > hit.x + hit.w - s && w.y > hit.y + hit.h - s) state.isResizing = true;
+            else { 
+                state.isDragging = true; 
+                if (hit.type === 'video') hit.el.paused ? hit.el.play() : hit.el.pause();
             }
-        } else {
-            state.selectedObj = null;
-            state.isDragging = true;
-            document.getElementById('snap-btn').style.display = 'none';
-        }
+            document.getElementById('snap-btn').style.display = hit.type === 'video' ? 'inline-block' : 'none';
+        } else { state.selectedObj = null; state.isDragging = true; document.getElementById('snap-btn').style.display = 'none'; }
         render();
     };
 
     canvas.onpointermove = (e) => {
-        const mouse = { x: e.clientX, y: e.clientY };
-        const dx = (mouse.x - state.lastMouse.x) / state.camera.zoom;
-        const dy = (mouse.y - state.lastMouse.y) / state.camera.zoom;
-        const world = { x: (mouse.x - state.camera.x)/state.camera.zoom, y: (mouse.y - state.camera.y)/state.camera.zoom };
-
+        const m = { x: e.clientX, y: e.clientY };
+        const dx = (m.x - state.lastMouse.x) / state.camera.zoom;
+        const dy = (m.y - state.lastMouse.y) / state.camera.zoom;
+        const w = { x: (m.x - state.camera.x)/state.camera.zoom, y: (m.y - state.camera.y)/state.camera.zoom };
         if (state.isDrawing) {
-            if (state.mode === 'draw') state.lines[state.lines.length-1].points.push(world);
-            else state.lines = state.lines.filter(l => !l.points.some(p => Math.hypot(p.x-world.x, p.y-world.y) < 10/state.camera.zoom));
+            if (state.mode === 'draw') state.lines[state.lines.length-1].points.push(w);
+            else state.lines = state.lines.filter(l => !l.points.some(p => Math.hypot(p.x-w.x, p.y-w.y) < 15/state.camera.zoom));
         } else if (state.isResizing && state.selectedObj) {
-            state.selectedObj.w += dx;
-            state.selectedObj.h = state.selectedObj.w / state.selectedObj.ratio;
+            state.selectedObj.w += dx; state.selectedObj.h = state.selectedObj.w / state.selectedObj.ratio;
         } else if (state.isDragging) {
-            if (state.selectedObj && state.mode === 'move') {
-                state.selectedObj.x += dx; state.selectedObj.y += dy;
-            } else {
-                state.camera.x += mouse.x - state.lastMouse.x;
-                state.camera.y += mouse.y - state.lastMouse.y;
-            }
+            if (state.selectedObj && state.mode === 'move') { state.selectedObj.x += dx; state.selectedObj.y += dy; }
+            else { state.camera.x += m.x - state.lastMouse.x; state.camera.y += m.y - state.lastMouse.y; }
         }
-        state.lastMouse = mouse;
-        render();
+        state.lastMouse = m; render();
     };
 
-    window.onpointerup = () => {
-        if (state.isDrawing || state.isResizing || (state.isDragging && state.selectedObj)) saveHistory();
-        state.isDrawing = state.isResizing = state.isDragging = false;
-    };
+    window.onpointerup = () => { if (state.isDrawing || state.isResizing || (state.isDragging && state.selectedObj)) triggerSave(); state.isDrawing = state.isResizing = state.isDragging = false; };
+    canvas.onwheel = (e) => { e.preventDefault(); state.camera.zoom *= (e.deltaY > 0 ? 0.9 : 1.1); render(); };
 
     function render() {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.save();
-        ctx.translate(state.camera.x, state.camera.y);
-        ctx.scale(state.camera.zoom, state.camera.zoom);
-
+        ctx.save(); ctx.translate(state.camera.x, state.camera.y); ctx.scale(state.camera.zoom, state.camera.zoom);
         state.objects.forEach(obj => {
             if (obj.el) ctx.drawImage(obj.el, obj.x, obj.y, obj.w, obj.h);
-            if (state.selectedObj === obj) {
-                ctx.strokeStyle = '#007bff'; ctx.lineWidth = 2/state.camera.zoom; ctx.strokeRect(obj.x, obj.y, obj.w, obj.h);
-                ctx.fillStyle = '#007bff'; const s = 10/state.camera.zoom; ctx.fillRect(obj.x+obj.w-s, obj.y+obj.h-s, s, s);
-            }
+            if (state.selectedObj === obj) { ctx.strokeStyle = '#007bff'; ctx.lineWidth = 2/state.camera.zoom; ctx.strokeRect(obj.x, obj.y, obj.w, obj.h); }
         });
-
         state.lines.forEach(l => {
-            ctx.beginPath(); ctx.strokeStyle = l.color; ctx.lineWidth = 3/state.camera.zoom; ctx.lineCap='round';
-            ctx.moveTo(l.points[0].x, l.points[0].y);
-            l.points.forEach(p => ctx.lineTo(p.x, p.y));
-            ctx.stroke();
+            ctx.beginPath(); ctx.strokeStyle = '#000'; ctx.lineWidth = 3/state.camera.zoom; ctx.lineCap='round';
+            ctx.moveTo(l.points[0].x, l.points[0].y); l.points.forEach(p => ctx.lineTo(p.x, p.y)); ctx.stroke();
         });
         ctx.restore();
-        if (state.objects.some(o => o.type === 'video' && !o.el.paused)) requestAnimationFrame(render);
+        if (state.objects.some(o => o.type === 'video' && o.el && !o.el.paused)) requestAnimationFrame(render);
     }
-
-    function resize() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; render(); }
-    function toggleTheme() { state.theme = state.theme === 'light' ? 'dark' : 'light'; document.body.setAttribute('data-theme', state.theme); render(); }
-    function deleteSelected() { if(state.selectedObj) { state.objects = state.objects.filter(o=>o!==state.selectedObj); state.selectedObj=null; saveHistory(); render(); } }
-
-    canvas.onwheel = (e) => { e.preventDefault(); state.camera.zoom *= (e.deltaY > 0 ? 0.9 : 1.1); render(); };
-    init();
 </script>
 </body>
 </html>
