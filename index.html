@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Infinite Board</title>
+<style>
+html, body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  font-family: sans-serif;
+}
+#toolbar {
+  position: fixed;
+  top: 10px;
+  left: 10px;
+  background: white;
+  padding: 8px;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0,0,0,.2);
+  z-index: 10;
+}
+canvas {
+  background: #f5f5f5;
+}
+</style>
+</head>
+<body>
+
+<div id="toolbar">
+  <button onclick="openProject()">📂 Открыть</button>
+  <button onclick="saveProject()">💾 Сохранить</button>
+  <input type="file" accept="image/*,video/*" onchange="addMedia(event)">
+  <button onclick="mode='draw'">✏️ Рисовать</button>
+  <button onclick="mode='move'">🖐️ Двигать</button>
+</div>
+
+<canvas id="canvas"></canvas>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+canvas.width = innerWidth;
+canvas.height = innerHeight;
+
+let mode = 'move';
+let objects = [];
+let drawing = false;
+let fileHandle = null;
+
+window.onresize = () => {
+  canvas.width = innerWidth;
+  canvas.height = innerHeight;
+  draw();
+};
+
+canvas.addEventListener('pointerdown', e => {
+  if (mode === 'draw') {
+    drawing = true;
+    ctx.beginPath();
+    ctx.moveTo(e.clientX, e.clientY);
+  }
+});
+
+canvas.addEventListener('pointermove', e => {
+  if (drawing) {
+    ctx.lineTo(e.clientX, e.clientY);
+    ctx.stroke();
+  }
+});
+
+canvas.addEventListener('pointerup', () => drawing = false);
+
+function addMedia(e) {
+  const file = e.target.files[0];
+  const url = URL.createObjectURL(file);
+  objects.push({ type: file.type.startsWith('video') ? 'video' : 'image', url, x: 100, y: 100 });
+  draw();
+}
+
+function draw() {
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  objects.forEach(o => {
+    if (o.type === 'image') {
+      const img = new Image();
+      img.src = o.url;
+      img.onload = () => ctx.drawImage(img, o.x, o.y, 200, 200);
+    }
+  });
+}
+
+async function saveProject() {
+  if (!fileHandle) {
+    fileHandle = await window.showSaveFilePicker({
+      types: [{ description: 'Board', accept: {'application/json':['.json']} }]
+    });
+  }
+  const writable = await fileHandle.createWritable();
+  await writable.write(JSON.stringify(objects));
+  await writable.close();
+}
+
+async function openProject() {
+  [fileHandle] = await window.showOpenFilePicker();
+  const file = await fileHandle.getFile();
+  const text = await file.text();
+  objects = JSON.parse(text);
+  draw();
+}
+</script>
+
+</body>
+</html>
