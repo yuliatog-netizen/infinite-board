@@ -3,41 +3,66 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Infinite Board (PureRef Style)</title>
+<title>Infinite Board Pro</title>
 <style>
-  html, body { margin: 0; height: 100%; overflow: hidden; font-family: sans-serif; background: #1a1a1a; color: white; }
+  :root {
+    --bg-color: #f0f0f0;
+    --panel-bg: white;
+    --text-color: #333;
+    --grid-color: #e2e2e2;
+    --border-color: #ddd;
+  }
+
+  [data-theme="dark"] {
+    --bg-color: #1a1a1a;
+    --panel-bg: #333;
+    --text-color: #eee;
+    --grid-color: #2a2a2a;
+    --border-color: #444;
+  }
+
+  html, body { margin: 0; height: 100%; overflow: hidden; font-family: sans-serif; background: var(--bg-color); color: var(--text-color); transition: background 0.3s; }
+  
   #toolbar {
     position: fixed; top: 15px; left: 50%; transform: translateX(-50%);
-    background: #333; padding: 10px 20px; border-radius: 30px;
-    box-shadow: 0 4px 20px rgba(0,0,0,0.5); z-index: 10;
-    display: flex; gap: 15px; align-items: center; border: 1px solid #444;
+    background: var(--panel-bg); padding: 10px 20px; border-radius: 30px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.1); z-index: 10;
+    display: flex; gap: 12px; align-items: center; border: 1px solid var(--border-color);
   }
+  
   canvas { display: block; }
+  
   button { 
-    background: #444; color: white; border: none; padding: 8px 15px; 
-    border-radius: 20px; cursor: pointer; transition: 0.2s; 
+    background: #eee; color: #333; border: 1px solid #ccc; padding: 8px 12px; 
+    border-radius: 20px; cursor: pointer; transition: 0.2s; font-size: 14px;
   }
-  button:hover { background: #555; }
-  button.active { background: #007bff; }
+  
+  [data-theme="dark"] button { background: #444; color: #eee; border-color: #555; }
+  
+  button:hover { opacity: 0.8; }
+  button.active { background: #007bff !important; color: white !important; border-color: #0056b3 !important; }
+  
   input[type="color"] { border: none; width: 30px; height: 30px; cursor: pointer; background: none; }
-  .hint { position: fixed; bottom: 10px; right: 10px; color: #888; font-size: 12px; pointer-events: none; }
+  
+  .hint { position: fixed; bottom: 10px; right: 10px; color: #999; font-size: 11px; pointer-events: none; }
 </style>
 </head>
-<body>
+<body data-theme="light">
 
 <div id="toolbar">
-  <button onclick="openProject()">📂 Открыть JSON</button>
+  <button onclick="toggleTheme()" id="themeBtn">🌙</button>
+  <button onclick="openProject()">📂 Открыть</button>
   <button onclick="saveProject()">💾 Сохранить</button>
-  <hr style="border: 0; border-left: 1px solid #555; height: 20px;">
+  <hr style="border: 0; border-left: 1px solid var(--border-color); height: 20px;">
   <input type="file" id="fileInput" style="display:none" accept="image/*,video/*" onchange="addMedia(event)">
   <button onclick="document.getElementById('fileInput').click()">➕ Медиа</button>
   <button id="btn-draw" onclick="setMode('draw')">✏️ Рисовать</button>
   <button id="btn-move" onclick="setMode('move')" class="active">🖐️ Двигать</button>
-  <input type="color" id="colorPicker" value="#ffffff" title="Цвет кисти">
-  <button onclick="clearBoard()" style="background: #600;">🗑️ Очистить</button>
+  <input type="color" id="colorPicker" value="#000000">
+  <button onclick="clearBoard()" style="background: #ffeded !important; color: #c00 !important;">🗑️</button>
 </div>
 
-<div class="hint">Колесо мыши: Зум | Правая кнопка: Удалить объект | Двигать: Зажать пробел или кнопку</div>
+<div class="hint">Колесо: Зум | ПКМ: Удалить | Пробел: Двигать</div>
 
 <canvas id="canvas"></canvas>
 
@@ -52,10 +77,24 @@ let lines = [];
 let isDrawing = false;
 let isPanning = false;
 
-// Состояние камеры
 let camera = { x: window.innerWidth/2, y: window.innerHeight/2, zoom: 1 };
 let lastMouse = { x: 0, y: 0 };
-let fileHandle = null; // Для "умного" сохранения
+let fileHandle = null;
+
+function toggleTheme() {
+  const body = document.body;
+  const btn = document.getElementById('themeBtn');
+  if (body.getAttribute('data-theme') === 'light') {
+    body.setAttribute('data-theme', 'dark');
+    btn.innerText = '☀️';
+    if (colorPicker.value === '#000000') colorPicker.value = '#ffffff';
+  } else {
+    body.setAttribute('data-theme', 'light');
+    btn.innerText = '🌙';
+    if (colorPicker.value === '#ffffff') colorPicker.value = '#000000';
+  }
+  render();
+}
 
 function resize() {
   canvas.width = window.innerWidth;
@@ -68,11 +107,9 @@ resize();
 function setMode(m) {
   mode = m;
   document.querySelectorAll('#toolbar button').forEach(b => b.classList.remove('active'));
-  const btn = document.getElementById('btn-' + m);
-  if(btn) btn.classList.add('active');
+  document.getElementById('btn-' + m).classList.add('active');
 }
 
-// Координаты мыши с учетом зума и камеры
 function getWorldPos(e) {
   return {
     x: (e.clientX - camera.x) / camera.zoom,
@@ -85,10 +122,7 @@ canvas.addEventListener('wheel', e => {
   const delta = e.deltaY > 0 ? 0.9 : 1.1;
   const mouseBefore = getWorldPos(e);
   camera.zoom *= delta;
-  // Ограничение зума
-  if (camera.zoom < 0.1) camera.zoom = 0.1;
-  if (camera.zoom > 5) camera.zoom = 5;
-  
+  camera.zoom = Math.max(0.1, Math.min(camera.zoom, 5));
   const mouseAfter = getWorldPos(e);
   camera.x += (mouseAfter.x - mouseBefore.x) * camera.zoom;
   camera.y += (mouseAfter.y - mouseBefore.y) * camera.zoom;
@@ -99,7 +133,7 @@ canvas.addEventListener('pointerdown', e => {
   lastMouse = { x: e.clientX, y: e.clientY };
   const worldPos = getWorldPos(e);
 
-  if (e.button === 2) { // Правая кнопка мыши — удаление
+  if (e.button === 2) {
     objects = objects.filter(o => !(worldPos.x > o.x && worldPos.x < o.x + o.w && worldPos.y > o.y && worldPos.y < o.y + o.h));
     render();
     return;
@@ -133,21 +167,18 @@ function addMedia(e) {
   const file = e.target.files[0];
   if (!file) return;
   const url = URL.createObjectURL(file);
-  const worldCenter = { x: -camera.x / camera.zoom, y: -camera.y / camera.zoom };
+  const worldCenter = { x: (window.innerWidth/2 - camera.x) / camera.zoom, y: (window.innerHeight/2 - camera.y) / camera.zoom };
   
   if (file.type.startsWith('video')) {
     const video = document.createElement('video');
-    video.src = url;
-    video.muted = true;
-    video.loop = true;
-    video.play();
-    objects.push({ type: 'video', el: video, x: worldCenter.x, y: worldCenter.y, w: 400, h: 225 });
+    video.src = url; video.muted = true; video.loop = true; video.play();
+    objects.push({ type: 'video', el: video, x: worldCenter.x - 200, y: worldCenter.y - 112, w: 400, h: 225 });
     video.onloadeddata = render;
   } else {
     const img = new Image();
     img.src = url;
     img.onload = () => {
-      objects.push({ type: 'image', el: img, x: worldCenter.x, y: worldCenter.y, w: img.width/2, h: img.height/2 });
+      objects.push({ type: 'image', el: img, x: worldCenter.x - (img.width/4), y: worldCenter.y - (img.height/4), w: img.width/2, h: img.height/2 });
       render();
     };
   }
@@ -155,17 +186,14 @@ function addMedia(e) {
 
 function render() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  
-  // Рисуем сетку
   drawGrid();
-
   ctx.save();
   ctx.translate(camera.x, camera.y);
   ctx.scale(camera.zoom, camera.zoom);
 
   objects.forEach(o => {
     ctx.drawImage(o.el, o.x, o.y, o.w, o.h);
-    if (o.type === 'video') requestAnimationFrame(render); // Видео нужно перерисовывать
+    if (o.type === 'video') requestAnimationFrame(render);
   });
 
   lines.forEach(line => {
@@ -173,17 +201,17 @@ function render() {
     ctx.strokeStyle = line.color;
     ctx.lineWidth = 2 / camera.zoom;
     ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
     ctx.moveTo(line.points[0].x, line.points[0].y);
     line.points.forEach(p => ctx.lineTo(p.x, p.y));
     ctx.stroke();
   });
-
   ctx.restore();
 }
 
 function drawGrid() {
   const size = 50 * camera.zoom;
-  ctx.strokeStyle = '#2a2a2a';
+  ctx.strokeStyle = getComputedStyle(document.body).getPropertyValue('--grid-color');
   ctx.lineWidth = 1;
   ctx.beginPath();
   for (let x = camera.x % size; x < canvas.width; x += size) {
@@ -196,45 +224,41 @@ function drawGrid() {
 }
 
 function clearBoard() {
-  if(confirm("Очистить всю доску?")) {
-    objects = []; lines = []; render();
-  }
+  if(confirm("Очистить всё?")) { objects = []; lines = []; render(); }
 }
 
 async function saveProject() {
-  const data = JSON.stringify({ camera, lines, objects: [] }); // Объекты с URL сложно сохранять без сервера
-  
+  const data = JSON.stringify({ camera, lines, theme: document.body.getAttribute('data-theme') }); 
   try {
     if (!fileHandle) {
-      fileHandle = await window.showSaveFilePicker({
-        suggestedName: 'board.json',
-        types: [{ description: 'JSON', accept: {'application/json': ['.json']} }]
-      });
+      fileHandle = await window.showSaveFilePicker({ suggestedName: 'board.json' });
     }
     const writable = await fileHandle.createWritable();
     await writable.write(data);
     await writable.close();
     alert("Сохранено!");
   } catch (e) {
-    console.error(e);
-    // Fallback если браузер не поддерживает File System Access API
     const blob = new Blob([data], {type: 'application/json'});
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = 'board.json';
-    a.click();
+    a.download = 'board.json'; a.click();
   }
 }
 
 async function openProject() {
   try {
-    [fileHandle] = await window.showOpenFilePicker();
+    const [handle] = await window.showOpenFilePicker();
+    fileHandle = handle;
     const file = await fileHandle.getFile();
     const content = JSON.parse(await file.text());
     camera = content.camera;
     lines = content.lines;
+    if (content.theme) {
+        document.body.setAttribute('data-theme', content.theme);
+        document.getElementById('themeBtn').innerText = content.theme === 'light' ? '🌙' : '☀️';
+    }
     render();
-  } catch (e) { alert("Ошибка при открытии"); }
+  } catch (e) { console.log(e); }
 }
 </script>
 </body>
