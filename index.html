@@ -3,37 +3,29 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Infinite Board</title>
+<title>Infinite Board Pro</title>
 <style>
-html, body {
-  margin: 0;
-  height: 100%;
-  overflow: hidden;
-  font-family: sans-serif;
-}
-#toolbar {
-  position: fixed;
-  top: 10px;
-  left: 10px;
-  background: white;
-  padding: 8px;
-  border-radius: 8px;
-  box-shadow: 0 2px 8px rgba(0,0,0,.2);
-  z-index: 10;
-}
-canvas {
-  background: #f5f5f5;
-}
+  html, body { margin: 0; height: 100%; overflow: hidden; font-family: sans-serif; background: #e5e5e5; }
+  #toolbar {
+    position: fixed; top: 10px; left: 10px; background: white;
+    padding: 10px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.15);
+    z-index: 10; display: flex; gap: 8px; align-items: center;
+  }
+  canvas { display: block; cursor: crosshair; }
+  button { padding: 6px 12px; cursor: pointer; border: 1px solid #ccc; border-radius: 4px; background: #fff; }
+  button.active { background: #007bff; color: white; border-color: #0056b3; }
 </style>
 </head>
 <body>
 
 <div id="toolbar">
-  <button onclick="openProject()">📂 Открыть</button>
-  <button onclick="saveProject()">💾 Сохранить</button>
-  <input type="file" accept="image/*,video/*" onchange="addMedia(event)">
-  <button onclick="mode='draw'">✏️ Рисовать</button>
-  <button onclick="mode='move'">🖐️ Двигать</button>
+  <button onclick="openProject()">📂</button>
+  <button onclick="saveProject()">💾</button>
+  <input type="file" id="fileInput" style="display:none" accept="image/*" onchange="addMedia(event)">
+  <button onclick="document.getElementById('fileInput').click()">🖼️ +</button>
+  <hr>
+  <button id="btn-draw" onclick="setMode('draw')">✏️ Рисовать</button>
+  <button id="btn-move" onclick="setMode('move')" class="active">🖐️ Двигать</button>
 </div>
 
 <canvas id="canvas"></canvas>
@@ -41,74 +33,139 @@ canvas {
 <script>
 const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
-canvas.width = innerWidth;
-canvas.height = innerHeight;
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
 
 let mode = 'move';
-let objects = [];
-let drawing = false;
-let fileHandle = null;
+let objects = []; // Храним картинки
+let lines = [];   // Храним линии
+let isDrawing = false;
+let isPanning = false;
 
-window.onresize = () => {
-  canvas.width = innerWidth;
-  canvas.height = innerHeight;
-  draw();
-};
+// Состояние камеры (смещение)
+let camera = { x: 0, y: 0 };
+let lastMouse = { x: 0, y: 0 };
+
+function setMode(m) {
+  mode = m;
+  document.querySelectorAll('#toolbar button').forEach(b => b.classList.remove('active'));
+  document.getElementById('btn-' + m).classList.add('active');
+}
 
 canvas.addEventListener('pointerdown', e => {
+  lastMouse = { x: e.clientX, y: e.clientY };
   if (mode === 'draw') {
-    drawing = true;
-    ctx.beginPath();
-    ctx.moveTo(e.clientX, e.clientY);
+    isDrawing = true;
+    // Начинаем новую линию. Координаты учитывают смещение камеры!
+    lines.push({
+      points: [{ x: e.clientX - camera.x, y: e.clientY - camera.y }],
+      color: '#000'
+    });
+  } else {
+    isPanning = true;
   }
 });
 
 canvas.addEventListener('pointermove', e => {
-  if (drawing) {
-    ctx.lineTo(e.clientX, e.clientY);
-    ctx.stroke();
+  if (isDrawing && mode === 'draw') {
+    const currentLine = lines[lines.length - 1];
+    currentLine.points.push({ x: e.clientX - camera.x, y: e.clientY - camera.y });
+    render();
+  } else if (isPanning && mode === 'move') {
+    camera.x += e.clientX - lastMouse.x;
+    camera.y += e.clientY - lastMouse.y;
+    lastMouse = { x: e.clientX, y: e.clientY };
+    render();
   }
 });
 
-canvas.addEventListener('pointerup', () => drawing = false);
+window.addEventListener('pointerup', () => {
+  isDrawing = false;
+  isPanning = false;
+});
 
 function addMedia(e) {
   const file = e.target.files[0];
-  const url = URL.createObjectURL(file);
-  objects.push({ type: file.type.startsWith('video') ? 'video' : 'image', url, x: 100, y: 100 });
-  draw();
-}
-
-function draw() {
-  ctx.clearRect(0,0,canvas.width,canvas.height);
-  objects.forEach(o => {
-    if (o.type === 'image') {
-      const img = new Image();
-      img.src = o.url;
-      img.onload = () => ctx.drawImage(img, o.x, o.y, 200, 200);
-    }
-  });
-}
-
-async function saveProject() {
-  if (!fileHandle) {
-    fileHandle = await window.showSaveFilePicker({
-      types: [{ description: 'Board', accept: {'application/json':['.json']} }]
+  if (!file) return;
+  const img = new Image();
+  img.src = URL.createObjectURL(file);
+  img.onload = () => {
+    objects.push({ 
+      img, 
+      x: (canvas.width/2) - camera.x - 100, 
+      y: (canvas.height/2) - camera.y - 100,
+      w: 200, h: 200 
     });
-  }
-  const writable = await fileHandle.createWritable();
-  await writable.write(JSON.stringify(objects));
-  await writable.close();
+    render();
+  };
 }
 
-async function openProject() {
-  [fileHandle] = await window.showOpenFilePicker();
-  const file = await fileHandle.getFile();
-  const text = await file.text();
-  objects = JSON.parse(text);
-  draw();
+function render() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  
+  ctx.save();
+  ctx.translate(camera.x, camera.y); // "Двигаем" весь мир
+
+  // 1. Рисуем картинки
+  objects.forEach(obj => {
+    ctx.drawImage(obj.img, obj.x, obj.y, obj.w, obj.h);
+  });
+
+  // 2. Рисуем линии
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  ctx.lineWidth = 3;
+  lines.forEach(line => {
+    ctx.beginPath();
+    ctx.moveTo(line.points[0].x, line.points[0].y);
+    line.points.forEach(p => ctx.lineTo(p.x, p.y));
+    ctx.stroke();
+  });
+
+  ctx.restore();
+}
+
+// Запуск начальной отрисовки
+render();
+
+// Сохранение и загрузка (упрощенно)
+async function saveProject() {
+    const data = JSON.stringify({
+        camera,
+        lines,
+        objects: objects.map(o => ({x: o.x, y: o.y, w: o.w, h: o.h, src: o.img.src}))
+    });
+    const blob = new Blob([data], {type: 'application/json'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'board.json';
+    a.click();
+}
+
+// Открытие файла (через обычный input для совместимости)
+function openProject() {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.onchange = e => {
+        const file = e.target.files[0];
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            const data = JSON.parse(event.target.result);
+            lines = data.lines;
+            camera = data.camera;
+            objects = data.objects.map(o => {
+                const img = new Image();
+                img.src = o.src;
+                img.onload = render;
+                return {...o, img};
+            });
+            render();
+        };
+        reader.readAsText(file);
+    };
+    input.click();
 }
 </script>
-
 </body>
 </html>
