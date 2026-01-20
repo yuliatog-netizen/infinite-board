@@ -3,82 +3,79 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Infinite Board PRO</title>
+    <title>Infinite Board PRO v2.1</title>
     <style>
-        :root { --bg: #f0f0f0; --panel: #ffffff; --accent: #007bff; --text: #333; }
+        :root { --bg: #f0f0f0; --panel: #ffffff; --accent: #007bff; --text: #333; --danger: #dc3545; }
         [data-theme="dark"] { --bg: #1a1a1a; --panel: #333; --accent: #007bff; --text: #eee; }
 
-        body, html { margin: 0; padding: 0; height: 100%; overflow: hidden; background: var(--bg); font-family: 'Segoe UI', sans-serif; transition: 0.3s; }
+        body, html { margin: 0; padding: 0; height: 100%; overflow: hidden; background: var(--bg); font-family: sans-serif; transition: 0.3s; touch-action: none; }
         
-        /* Панель управления */
-        #ui-layer { position: fixed; top: 0; left: 0; width: 100%; pointer-events: none; z-index: 100; }
+        #ui-layer { position: fixed; top: 0; left: 0; width: 100%; pointer-events: none; z-index: 100; display: flex; flex-direction: column; align-items: center; }
         .panel { 
-            pointer-events: auto; background: var(--panel); padding: 10px; 
-            border-radius: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); 
-            display: flex; gap: 10px; align-items: center; margin: 10px;
+            pointer-events: auto; background: var(--panel); padding: 8px 15px; 
+            border-radius: 30px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); 
+            display: flex; gap: 8px; align-items: center; margin: 10px;
             border: 1px solid rgba(0,0,0,0.1);
         }
-        #top-bar { position: absolute; left: 50%; transform: translateX(-50%); }
-        #side-bar { position: absolute; left: 0; top: 60px; flex-direction: column; }
 
         button { 
-            background: #eee; border: none; padding: 10px; border-radius: 10px; 
-            cursor: pointer; font-size: 16px; transition: 0.2s; color: #333;
+            background: #eee; border: none; padding: 8px 12px; border-radius: 20px; 
+            cursor: pointer; font-size: 14px; transition: 0.2s; color: #333; white-space: nowrap;
         }
         [data-theme="dark"] button { background: #444; color: #eee; }
         button.active { background: var(--accent) !important; color: white !important; }
+        button.danger { background: #ffeded; color: var(--danger); }
+        [data-theme="dark"] button.danger { background: #4a2b2b; color: #ff8080; }
         
-        canvas { display: block; touch-action: none; }
+        canvas { display: block; }
 
-        /* Текстовый редактор поверх канваса */
-        #text-editor {
+        #text-input {
             position: fixed; display: none; background: white; border: 2px solid var(--accent);
-            z-index: 1000; outline: none; padding: 5px; min-width: 50px; color: black;
+            z-index: 1000; outline: none; padding: 5px; min-width: 100px; color: black; font-size: 18px;
         }
     </style>
 </head>
 <body data-theme="light">
 
 <div id="ui-layer">
-    <div id="top-bar" class="panel">
+    <div class="panel">
         <button onclick="toggleTheme()">🌓</button>
-        <button id="mode-move" class="active" onclick="setMode('move')">🖐️</button>
-        <button id="mode-draw" onclick="setMode('draw')">✏️</button>
-        <button id="mode-text" onclick="setMode('text')">TXT</button>
+        <button id="mode-move" class="active" onclick="setMode('move')">🖐️ Двигать</button>
+        <button id="mode-draw" onclick="setMode('draw')">✏️ Рисовать</button>
+        <button id="mode-text" onclick="setMode('text')">TXT Текст</button>
         <hr style="width:1px; height:20px; border:none; background:#ccc;">
         <input type="file" id="file-input" hidden accept="image/*,video/*" onchange="handleFile(event)">
-        <button onclick="document.getElementById('file-input').click()">➕</button>
-        <button onclick="saveToJSON()">💾</button>
-    </div>
-    
-    <div id="side-bar" class="panel">
-        <button onclick="addBoard()">📁 Новая доска</button>
-        <div id="boards-list"></div>
+        <button onclick="document.getElementById('file-input').click()">➕ Медиа</button>
+        <button class="danger" onclick="deleteSelected()">🗑️ Объект</button>
+        <button class="danger" onclick="clearBoard()">💣 Очистить</button>
     </div>
 </div>
 
-<div id="text-editor" contenteditable="true"></div>
-<canvas id="mainCanvas"></canvas>
+<div id="text-input" contenteditable="true"></div>
+<canvas id="canvas"></canvas>
 
 <script>
-    const canvas = document.getElementById('mainCanvas');
+    const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d');
-    const editor = document.getElementById('text-editor');
+    const textInput = document.getElementById('text-input');
 
     let state = {
         mode: 'move',
         theme: 'light',
         camera: { x: window.innerWidth/2, y: window.innerHeight/2, zoom: 1 },
-        objects: [], // { type: 'img/video/text', x, y, w, h, data: src/text }
+        objects: [], // Картинки, видео, текст
+        lines: [],   // Рисунки кистью
         selectedObj: null,
         isDragging: false,
-        lastMouse: { x: 0, y: 0 }
+        isResizing: false,
+        isDrawing: false,
+        lastMouse: { x: 0, y: 0 },
+        textWorldPos: null
     };
 
     function init() {
         window.addEventListener('resize', resize);
         resize();
-        loadFromLocalStorage();
         render();
     }
 
@@ -91,153 +88,164 @@
     function setMode(m) {
         state.mode = m;
         document.querySelectorAll('.panel button').forEach(b => b.classList.remove('active'));
-        document.getElementById('mode-' + m).classList.add('active');
+        const btn = document.getElementById('mode-' + m);
+        if(btn) btn.classList.add('active');
+        state.selectedObj = null;
+        render();
     }
 
-    // --- ЛОГИКА ОБЪЕКТОВ ---
+    function getWorldPos(e) {
+        return {
+            x: (e.clientX - state.camera.x) / state.camera.zoom,
+            y: (e.clientY - state.camera.y) / state.camera.zoom
+        };
+    }
+
+    // --- ФАЙЛЫ ---
     function handleFile(e) {
         const file = e.target.files[0];
         if (!file) return;
         const url = URL.createObjectURL(file);
-        const worldPos = { x: -state.camera.x / state.camera.zoom, y: -state.camera.y / state.camera.zoom };
+        const pos = { x: -state.camera.x/state.camera.zoom + 100, y: -state.camera.y/state.camera.zoom + 100 };
 
         if (file.type.startsWith('image')) {
             const img = new Image();
             img.src = url;
             img.onload = () => {
-                state.objects.push({ type: 'image', x: worldPos.x, y: worldPos.y, w: img.width/2, h: img.height/2, el: img });
-                saveAndRender();
+                state.objects.push({ type: 'image', x: pos.x, y: pos.y, w: img.width/2, h: img.height/2, el: img });
+                render();
             };
         } else if (file.type.startsWith('video')) {
             const video = document.createElement('video');
-            video.src = url; video.muted = true; video.loop = true; video.play();
-            state.objects.push({ type: 'video', x: worldPos.x, y: worldPos.y, w: 320, h: 180, el: video });
-            video.onloadeddata = saveAndRender;
+            video.src = url; video.muted = false; video.loop = true;
+            video.onloadeddata = () => {
+                state.objects.push({ type: 'video', x: pos.x, y: pos.y, w: 320, h: 180, el: video });
+                render();
+            };
         }
-    }
-
-    // --- РЕНДЕРИНГ ---
-    function render() {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        drawGrid();
-
-        ctx.save();
-        ctx.translate(state.camera.x, state.camera.y);
-        ctx.scale(state.camera.zoom, state.camera.zoom);
-
-        state.objects.forEach(obj => {
-            if (obj.type === 'image' || obj.type === 'video') {
-                ctx.drawImage(obj.el, obj.x, obj.y, obj.w, obj.h);
-            } else if (obj.type === 'text') {
-                ctx.fillStyle = state.theme === 'light' ? '#000' : '#fff';
-                ctx.font = "20px Arial";
-                ctx.fillText(obj.data, obj.x, obj.y);
-            }
-            
-            // Рамка выделения
-            if (state.selectedObj === obj) {
-                ctx.strokeStyle = '#007bff';
-                ctx.lineWidth = 2 / state.camera.zoom;
-                ctx.strokeRect(obj.x, obj.y, obj.w, obj.h);
-            }
-        });
-
-        ctx.restore();
-        if (state.objects.some(o => o.type === 'video')) requestAnimationFrame(render);
-    }
-
-    function drawGrid() {
-        const size = 50 * state.camera.zoom;
-        ctx.strokeStyle = state.theme === 'light' ? '#ddd' : '#333';
-        ctx.beginPath();
-        for (let x = state.camera.x % size; x < canvas.width; x += size) { ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); }
-        for (let y = state.camera.y % size; y < canvas.height; y += size) { ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); }
-        ctx.stroke();
     }
 
     // --- ВЗАИМОДЕЙСТВИЕ ---
     canvas.onpointerdown = (e) => {
-        state.isDragging = true;
-        state.lastMouse = { x: e.clientX, y: e.clientY };
-        
-        const worldPos = {
-            x: (e.clientX - state.camera.x) / state.camera.zoom,
-            y: (e.clientY - state.camera.y) / state.camera.zoom
-        };
+        const mouse = { x: e.clientX, y: e.clientY };
+        const world = getWorldPos(e);
+        state.lastMouse = mouse;
 
-        // Проверка клика по объекту
-        state.selectedObj = [...state.objects].reverse().find(o => 
-            worldPos.x > o.x && worldPos.x < o.x + o.w && worldPos.y > o.y && worldPos.y < o.y + o.h
+        if (state.mode === 'draw') {
+            state.isDrawing = true;
+            state.lines.push({ points: [world], color: state.theme === 'light' ? '#000' : '#fff' });
+            return;
+        }
+
+        if (state.mode === 'text') {
+            showTextInput(e.clientX, e.clientY, world);
+            return;
+        }
+
+        // Проверка нажатия на узел изменения размера (маленький квадрат в углу)
+        if (state.selectedObj) {
+            const handleSize = 15 / state.camera.zoom;
+            const cornerX = state.selectedObj.x + state.selectedObj.w;
+            const cornerY = state.selectedObj.y + state.selectedObj.h;
+            if (world.x > cornerX - handleSize && world.x < cornerX + handleSize &&
+                world.y > cornerY - handleSize && world.y < cornerY + handleSize) {
+                state.isResizing = true;
+                return;
+            }
+        }
+
+        // Выбор объекта (с конца массива, чтобы брать верхний)
+        const hit = [...state.objects].reverse().find(o => 
+            world.x > o.x && world.x < o.x + o.w && world.y > o.y && world.y < o.y + o.h
         );
 
-        if (state.mode === 'text' && !state.selectedObj) {
-            showTextEditor(e.clientX, e.clientY, worldPos);
+        if (hit) {
+            state.selectedObj = hit;
+            state.isDragging = true;
+            // Если это видео - переключаем паузу/плей при клике
+            if (hit.type === 'video' && !state.isResizing) {
+                hit.el.paused ? hit.el.play() : hit.el.pause();
+            }
+        } else {
+            state.selectedObj = null;
+            state.isDragging = true; // Будем двигать камеру
         }
         render();
     };
 
     canvas.onpointermove = (e) => {
-        if (!state.isDragging) return;
-        const dx = (e.clientX - state.lastMouse.x) / state.camera.zoom;
-        const dy = (e.clientY - state.lastMouse.y) / state.camera.zoom;
+        const mouse = { x: e.clientX, y: e.clientY };
+        const world = getWorldPos(e);
+        const dx = (mouse.x - state.lastMouse.x) / state.camera.zoom;
+        const dy = (mouse.y - state.lastMouse.y) / state.camera.zoom;
 
-        if (state.selectedObj && state.mode === 'move') {
-            state.selectedObj.x += dx;
-            state.selectedObj.y += dy;
-        } else if (state.mode === 'move') {
-            state.camera.x += e.clientX - state.lastMouse.x;
-            state.camera.y += e.clientY - state.lastMouse.y;
+        if (state.isDrawing) {
+            state.lines[state.lines.length - 1].points.push(world);
+        } else if (state.isResizing && state.selectedObj) {
+            state.selectedObj.w += dx;
+            state.selectedObj.h += dy;
+        } else if (state.isDragging) {
+            if (state.selectedObj && state.mode === 'move') {
+                state.selectedObj.x += dx;
+                state.selectedObj.y += dy;
+            } else {
+                state.camera.x += mouse.x - state.lastMouse.x;
+                state.camera.y += mouse.y - state.lastMouse.y;
+            }
         }
-        state.lastMouse = { x: e.clientX, y: e.clientY };
+        
+        state.lastMouse = mouse;
         render();
     };
 
-    window.onpointerup = () => { state.isDragging = false; saveToLocalStorage(); };
+    window.onpointerup = () => {
+        state.isDragging = false;
+        state.isResizing = false;
+        state.isDrawing = false;
+    };
 
-    // Зум
     canvas.onwheel = (e) => {
         e.preventDefault();
-        const factor = e.deltaY > 0 ? 0.9 : 1.1;
-        state.camera.zoom *= factor;
+        const delta = e.deltaY > 0 ? 0.9 : 1.1;
+        state.camera.zoom *= delta;
         render();
     };
 
-    // --- ФУНКЦИИ ТЕКСТА ---
-    function showTextEditor(screenX, screenY, worldPos) {
-        editor.style.display = 'block';
-        editor.style.left = screenX + 'px';
-        editor.style.top = screenY + 'px';
-        editor.focus();
-        editor.onblur = () => {
-            if (editor.innerText.trim()) {
-                state.objects.push({ 
-                    type: 'text', x: worldPos.x, y: worldPos.y, 
-                    w: 100, h: 30, data: editor.innerText 
-                });
-            }
-            editor.style.display = 'none';
-            editor.innerText = '';
-            saveAndRender();
-        };
+    // --- ТЕКСТ ---
+    function showTextInput(x, y, world) {
+        textInput.style.display = 'block';
+        textInput.style.left = x + 'px';
+        textInput.style.top = y + 'px';
+        state.textWorldPos = world;
+        setTimeout(() => textInput.focus(), 10);
     }
 
-    // --- СОХРАНЕНИЕ ---
-    function saveAndRender() { saveToLocalStorage(); render(); }
+    textInput.onblur = () => {
+        if (textInput.innerText.trim()) {
+            state.objects.push({ 
+                type: 'text', x: state.textWorldPos.x, y: state.textWorldPos.y, 
+                w: 200, h: 40, data: textInput.innerText 
+            });
+        }
+        textInput.style.display = 'none';
+        textInput.innerText = '';
+        render();
+    };
 
-    function saveToLocalStorage() {
-        const rawObjects = state.objects.map(o => ({...o, el: null})); // Картинки не сохраняем в JSON напрямую
-        localStorage.setItem('infinite_board_data', JSON.stringify({
-            camera: state.camera,
-            objects: rawObjects.filter(o => o.type === 'text') // Пока только текст, картинки требуют IndexedDB
-        }));
+    // --- ФУНКЦИИ УПРАВЛЕНИЯ ---
+    function deleteSelected() {
+        if (state.selectedObj) {
+            state.objects = state.objects.filter(o => o !== state.selectedObj);
+            state.selectedObj = null;
+            render();
+        }
     }
 
-    function loadFromLocalStorage() {
-        const data = localStorage.getItem('infinite_board_data');
-        if (data) {
-            const parsed = JSON.parse(data);
-            state.camera = parsed.camera;
-            // Здесь будет логика загрузки картинок
+    function clearBoard() {
+        if (confirm("Удалить всё с доски?")) {
+            state.objects = [];
+            state.lines = [];
+            render();
         }
     }
 
@@ -245,6 +253,63 @@
         state.theme = state.theme === 'light' ? 'dark' : 'light';
         document.body.setAttribute('data-theme', state.theme);
         render();
+    }
+
+    // --- РЕНДЕРИНГ ---
+    function render() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        
+        // Сетка
+        const gridSize = 50 * state.camera.zoom;
+        ctx.strokeStyle = state.theme === 'light' ? '#ddd' : '#333';
+        ctx.beginPath();
+        for (let x = state.camera.x % gridSize; x < canvas.width; x += gridSize) { ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); }
+        for (let y = state.camera.y % gridSize; y < canvas.height; y += gridSize) { ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); }
+        ctx.stroke();
+
+        ctx.save();
+        ctx.translate(state.camera.x, state.camera.y);
+        ctx.scale(state.camera.zoom, state.camera.zoom);
+
+        // Объекты
+        state.objects.forEach(obj => {
+            if (obj.type === 'image' || obj.type === 'video') {
+                ctx.drawImage(obj.el, obj.x, obj.y, obj.w, obj.h);
+            } else if (obj.type === 'text') {
+                ctx.fillStyle = state.theme === 'light' ? '#000' : '#fff';
+                ctx.font = "20px sans-serif";
+                ctx.fillText(obj.data, obj.x, obj.y + 20);
+            }
+
+            // Рамка выделения и узел изменения размера
+            if (state.selectedObj === obj) {
+                ctx.strokeStyle = '#007bff';
+                ctx.lineWidth = 2 / state.camera.zoom;
+                ctx.strokeRect(obj.x, obj.y, obj.w, obj.h);
+                // Узел (синий квадратик)
+                ctx.fillStyle = '#007bff';
+                const s = 10 / state.camera.zoom;
+                ctx.fillRect(obj.x + obj.w - s/2, obj.y + obj.h - s/2, s, s);
+            }
+        });
+
+        // Линии рисунка
+        state.lines.forEach(line => {
+            ctx.beginPath();
+            ctx.strokeStyle = line.color;
+            ctx.lineWidth = 2 / state.camera.zoom;
+            ctx.lineCap = 'round';
+            ctx.moveTo(line.points[0].x, line.points[0].y);
+            line.points.forEach(p => ctx.lineTo(p.x, p.y));
+            ctx.stroke();
+        });
+
+        ctx.restore();
+        
+        // Постоянный рендер для видео
+        if (state.objects.some(o => o.type === 'video' && !o.el.paused)) {
+            requestAnimationFrame(render);
+        }
     }
 
     init();
