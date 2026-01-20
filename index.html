@@ -3,36 +3,28 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Infinite Board v3.3 (Video Cloud Ready)</title>
+    <title>Infinite Board v3.4 (Cloud + Compression)</title>
     <style>
         :root { --bg: #f0f0f0; --panel: #ffffff; --accent: #007bff; --text: #333; }
-        [data-theme="dark"] { --bg: #1a1a1a; --panel: #333; --accent: #007bff; --text: #eee; }
         body, html { margin: 0; padding: 0; height: 100%; overflow: hidden; background: var(--bg); font-family: sans-serif; touch-action: none; }
-        
         #ui-layer { position: fixed; top: 0; left: 0; width: 100%; pointer-events: none; z-index: 100; display: flex; flex-direction: column; align-items: center; }
         .panel { pointer-events: auto; background: var(--panel); padding: 5px 12px; border-radius: 30px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); display: flex; gap: 6px; align-items: center; margin: 8px; border: 1px solid rgba(0,0,0,0.1); }
-        
         #sidebar { position: fixed; top: 60px; left: 10px; width: 220px; background: var(--panel); border-radius: 15px; padding: 15px; pointer-events: auto; box-shadow: 0 4px 15px rgba(0,0,0,0.1); transform: translateX(-250px); transition: 0.3s; z-index: 101; max-height: 80vh; overflow-y: auto; }
         #sidebar.open { transform: translateX(0); }
-        
         .board-item { padding: 10px; border-radius: 8px; cursor: pointer; margin-bottom: 5px; color: var(--text); border: 1px solid transparent; }
         .board-item.active { border-color: var(--accent); background: rgba(0,123,255,0.1); }
-        
         #login-screen { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: var(--bg); z-index: 2000; display: flex; justify-content: center; align-items: center; flex-direction: column; }
-        
-        button { background: #eee; border: none; padding: 8px 12px; border-radius: 15px; cursor: pointer; color: #333; transition: 0.2s; }
-        button:hover { background: #ddd; }
+        button { background: #eee; border: none; padding: 8px 12px; border-radius: 15px; cursor: pointer; color: #333; }
         button.active { background: var(--accent) !important; color: white !important; }
-        
         #canvas { display: block; }
         .sync-indicator { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-left: 5px; }
     </style>
 </head>
-<body data-theme="light">
+<body>
 
 <div id="login-screen">
-    <h1 style="color:var(--text)">Infinite Board</h1>
-    <button onclick="login()" style="font-size:18px; padding: 15px 30px; background: #4285F4; color: white; border-radius: 5px;">Войти через Google</button>
+    <h1>Infinite Board</h1>
+    <button onclick="login()" style="font-size:18px; padding: 15px 30px; background: #4285F4; color: white;">Войти через Google</button>
 </div>
 
 <div id="ui-layer" style="display:none;">
@@ -43,18 +35,17 @@
         <button id="mode-eraser" onclick="setMode('eraser')">🧽</button>
         <hr style="width:1px; height:20px; border:none; background:#ccc;">
         <input type="file" id="file-input" hidden accept="image/*,video/*" onchange="handleFile(event)">
-        <button onclick="document.getElementById('file-input').click()">➕ Медиа (Cloud)</button>
-        <button id="snap-btn" onclick="takeSnapshot()" style="display:none;">📸</button>
+        <button onclick="document.getElementById('file-input').click()">➕ Медиа</button>
         <button onclick="deleteSelected()" style="color:red">🗑️</button>
         <div id="status-dot" class="sync-indicator" style="background: green;"></div>
     </div>
 </div>
 
 <div id="sidebar">
-    <h3 style="color:var(--text); margin-top:0;">Мои Доски</h3>
+    <h3 style="margin-top:0;">Мои Доски</h3>
     <button onclick="createNewBoard()" style="width:100%; margin-bottom:10px; background:var(--accent); color:white;">+ Создать доску</button>
     <div id="boards-list"></div>
-    <button onclick="logout()" style="width:100%; margin-top:20px; background:#fdd;">Выйти</button>
+    <button onclick="logout()" style="width:100%; margin-top:20px;">Выйти</button>
 </div>
 
 <canvas id="canvas"></canvas>
@@ -64,7 +55,6 @@
     import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
     import { getFirestore, doc, onSnapshot, collection, addDoc, query, where, getDocs, updateDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
-    // --- НАСТРОЙКИ (ОБНОВЛЕНО) ---
     const CLOUDINARY_NAME = "dacvtrygp"; 
     const CLOUDINARY_PRESET = "ml_default"; 
 
@@ -113,7 +103,7 @@
     }
 
     window.createNewBoard = async () => {
-        const name = prompt("Имя доски:", "Новая доска");
+        const name = prompt("Имя доски:");
         if (!name) return;
         const ref = await addDoc(collection(db, "boards"), { name, ownerId: currentUser.uid, objects: [], lines: [] });
         openBoard(ref.id);
@@ -161,49 +151,37 @@
     window.handleFile = async (e) => {
         const file = e.target.files[0];
         if (!file) return;
-
         document.getElementById('status-dot').style.background = 'blue'; 
-        
         const formData = new FormData();
         formData.append('file', file);
         formData.append('upload_preset', CLOUDINARY_PRESET);
 
         try {
-            const response = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_NAME}/auto/upload`, {
-                method: 'POST', body: formData
-            });
+            const response = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_NAME}/auto/upload`, { method: 'POST', body: formData });
             const data = await response.json();
-            const url = data.secure_url;
-            const pos = { x: (window.innerWidth/2 - state.camera.x)/state.camera.zoom, y: (window.innerHeight/2 - state.camera.y)/state.camera.zoom };
+            
+            // --- АВТОСЖАТИЕ ---
+            let url = data.secure_url;
+            if (file.type.startsWith('video')) url = url.replace('/upload/', '/upload/f_auto,q_auto,vc_auto/');
+            else if (file.type.startsWith('image')) url = url.replace('/upload/', '/upload/f_auto,q_auto/');
 
+            const pos = { x: (window.innerWidth/2 - state.camera.x)/state.camera.zoom, y: (window.innerHeight/2 - state.camera.y)/state.camera.zoom };
             if (file.type.startsWith('image')) {
                 const img = new Image(); img.src = url; img.crossOrigin = "anonymous";
-                img.onload = () => {
-                    state.objects.push({ type: 'image', x: pos.x, y: pos.y, w: img.width/2, h: img.height/2, url, ratio: img.width/img.height, el: img });
-                    render(); triggerSave();
-                };
+                img.onload = () => { state.objects.push({ type: 'image', x: pos.x, y: pos.y, w: img.width/2, h: img.height/2, url, ratio: img.width/img.height, el: img }); render(); triggerSave(); };
             } else {
                 const vid = document.createElement('video'); vid.src = url; vid.muted = true; vid.loop = true; vid.crossOrigin = "anonymous";
-                vid.onloadeddata = () => {
-                    state.objects.push({ type: 'video', x: pos.x, y: pos.y, w: 320, h: 180, url, ratio: 1.77, el: vid });
-                    render(); triggerSave();
-                };
+                vid.onloadeddata = () => { state.objects.push({ type: 'video', x: pos.x, y: pos.y, w: 320, h: 180, url, ratio: 1.77, el: vid }); render(); triggerSave(); };
             }
-        } catch (err) { alert("Ошибка загрузки. Проверь настройки Cloudinary."); }
+        } catch (err) { alert("Ошибка загрузки."); }
     };
 
-    // --- CANVAS LOGIC ---
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d');
     let state = { mode: 'move', camera: { x: window.innerWidth/2, y: window.innerHeight/2, zoom: 1 }, objects: [], lines: [], selectedObj: null };
 
     window.toggleSidebar = () => document.getElementById('sidebar').classList.toggle('open');
-    window.setMode = (m) => { 
-        state.mode = m; 
-        document.querySelectorAll('.panel button').forEach(b => b.classList.remove('active')); 
-        const btn = document.getElementById('mode-'+m);
-        if(btn) btn.classList.add('active'); 
-    };
+    window.setMode = (m) => { state.mode = m; document.querySelectorAll('.panel button').forEach(b => b.classList.remove('active')); document.getElementById('mode-'+m).classList.add('active'); };
     window.deleteSelected = () => { if(state.selectedObj) { state.objects = state.objects.filter(o=>o!==state.selectedObj); state.selectedObj=null; render(); triggerSave(); } };
 
     function resize() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; render(); }
@@ -216,7 +194,7 @@
         state.lastMouse = m;
         if (state.mode === 'draw' || state.mode === 'eraser') {
             state.isDrawing = true;
-            if (state.mode === 'draw') state.lines.push({ points: [w], color: '#000' });
+            if (state.mode === 'draw') state.lines.push({ points: [w] });
             return;
         }
         const hit = [...state.objects].reverse().find(o => w.x > o.x && w.x < o.x + o.w && w.y > o.y && w.y < o.y + o.h);
@@ -224,12 +202,8 @@
             state.selectedObj = hit;
             const s = 20 / state.camera.zoom;
             if (w.x > hit.x + hit.w - s && w.y > hit.y + hit.h - s) state.isResizing = true;
-            else { 
-                state.isDragging = true; 
-                if (hit.type === 'video') hit.el.paused ? hit.el.play() : hit.el.pause();
-            }
-            document.getElementById('snap-btn').style.display = hit.type === 'video' ? 'inline-block' : 'none';
-        } else { state.selectedObj = null; state.isDragging = true; document.getElementById('snap-btn').style.display = 'none'; }
+            else { state.isDragging = true; if (hit.type === 'video') hit.el.paused ? hit.el.play() : hit.el.pause(); }
+        } else { state.selectedObj = null; state.isDragging = true; }
         render();
     };
 
