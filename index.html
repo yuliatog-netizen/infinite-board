@@ -1,265 +1,253 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Infinite Board Pro</title>
-<style>
-  :root {
-    --bg-color: #f0f0f0;
-    --panel-bg: white;
-    --text-color: #333;
-    --grid-color: #e2e2e2;
-    --border-color: #ddd;
-  }
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Infinite Board PRO</title>
+    <style>
+        :root { --bg: #f0f0f0; --panel: #ffffff; --accent: #007bff; --text: #333; }
+        [data-theme="dark"] { --bg: #1a1a1a; --panel: #333; --accent: #007bff; --text: #eee; }
 
-  [data-theme="dark"] {
-    --bg-color: #1a1a1a;
-    --panel-bg: #333;
-    --text-color: #eee;
-    --grid-color: #2a2a2a;
-    --border-color: #444;
-  }
+        body, html { margin: 0; padding: 0; height: 100%; overflow: hidden; background: var(--bg); font-family: 'Segoe UI', sans-serif; transition: 0.3s; }
+        
+        /* Панель управления */
+        #ui-layer { position: fixed; top: 0; left: 0; width: 100%; pointer-events: none; z-index: 100; }
+        .panel { 
+            pointer-events: auto; background: var(--panel); padding: 10px; 
+            border-radius: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); 
+            display: flex; gap: 10px; align-items: center; margin: 10px;
+            border: 1px solid rgba(0,0,0,0.1);
+        }
+        #top-bar { position: absolute; left: 50%; transform: translateX(-50%); }
+        #side-bar { position: absolute; left: 0; top: 60px; flex-direction: column; }
 
-  html, body { margin: 0; height: 100%; overflow: hidden; font-family: sans-serif; background: var(--bg-color); color: var(--text-color); transition: background 0.3s; }
-  
-  #toolbar {
-    position: fixed; top: 15px; left: 50%; transform: translateX(-50%);
-    background: var(--panel-bg); padding: 10px 20px; border-radius: 30px;
-    box-shadow: 0 4px 20px rgba(0,0,0,0.1); z-index: 10;
-    display: flex; gap: 12px; align-items: center; border: 1px solid var(--border-color);
-  }
-  
-  canvas { display: block; }
-  
-  button { 
-    background: #eee; color: #333; border: 1px solid #ccc; padding: 8px 12px; 
-    border-radius: 20px; cursor: pointer; transition: 0.2s; font-size: 14px;
-  }
-  
-  [data-theme="dark"] button { background: #444; color: #eee; border-color: #555; }
-  
-  button:hover { opacity: 0.8; }
-  button.active { background: #007bff !important; color: white !important; border-color: #0056b3 !important; }
-  
-  input[type="color"] { border: none; width: 30px; height: 30px; cursor: pointer; background: none; }
-  
-  .hint { position: fixed; bottom: 10px; right: 10px; color: #999; font-size: 11px; pointer-events: none; }
-</style>
+        button { 
+            background: #eee; border: none; padding: 10px; border-radius: 10px; 
+            cursor: pointer; font-size: 16px; transition: 0.2s; color: #333;
+        }
+        [data-theme="dark"] button { background: #444; color: #eee; }
+        button.active { background: var(--accent) !important; color: white !important; }
+        
+        canvas { display: block; touch-action: none; }
+
+        /* Текстовый редактор поверх канваса */
+        #text-editor {
+            position: fixed; display: none; background: white; border: 2px solid var(--accent);
+            z-index: 1000; outline: none; padding: 5px; min-width: 50px; color: black;
+        }
+    </style>
 </head>
 <body data-theme="light">
 
-<div id="toolbar">
-  <button onclick="toggleTheme()" id="themeBtn">🌙</button>
-  <button onclick="openProject()">📂 Открыть</button>
-  <button onclick="saveProject()">💾 Сохранить</button>
-  <hr style="border: 0; border-left: 1px solid var(--border-color); height: 20px;">
-  <input type="file" id="fileInput" style="display:none" accept="image/*,video/*" onchange="addMedia(event)">
-  <button onclick="document.getElementById('fileInput').click()">➕ Медиа</button>
-  <button id="btn-draw" onclick="setMode('draw')">✏️ Рисовать</button>
-  <button id="btn-move" onclick="setMode('move')" class="active">🖐️ Двигать</button>
-  <input type="color" id="colorPicker" value="#000000">
-  <button onclick="clearBoard()" style="background: #ffeded !important; color: #c00 !important;">🗑️</button>
+<div id="ui-layer">
+    <div id="top-bar" class="panel">
+        <button onclick="toggleTheme()">🌓</button>
+        <button id="mode-move" class="active" onclick="setMode('move')">🖐️</button>
+        <button id="mode-draw" onclick="setMode('draw')">✏️</button>
+        <button id="mode-text" onclick="setMode('text')">TXT</button>
+        <hr style="width:1px; height:20px; border:none; background:#ccc;">
+        <input type="file" id="file-input" hidden accept="image/*,video/*" onchange="handleFile(event)">
+        <button onclick="document.getElementById('file-input').click()">➕</button>
+        <button onclick="saveToJSON()">💾</button>
+    </div>
+    
+    <div id="side-bar" class="panel">
+        <button onclick="addBoard()">📁 Новая доска</button>
+        <div id="boards-list"></div>
+    </div>
 </div>
 
-<div class="hint">Колесо: Зум | ПКМ: Удалить | Пробел: Двигать</div>
-
-<canvas id="canvas"></canvas>
+<div id="text-editor" contenteditable="true"></div>
+<canvas id="mainCanvas"></canvas>
 
 <script>
-const canvas = document.getElementById('canvas');
-const ctx = canvas.getContext('2d');
-const colorPicker = document.getElementById('colorPicker');
+    const canvas = document.getElementById('mainCanvas');
+    const ctx = canvas.getContext('2d');
+    const editor = document.getElementById('text-editor');
 
-let mode = 'move';
-let objects = []; 
-let lines = [];   
-let isDrawing = false;
-let isPanning = false;
-
-let camera = { x: window.innerWidth/2, y: window.innerHeight/2, zoom: 1 };
-let lastMouse = { x: 0, y: 0 };
-let fileHandle = null;
-
-function toggleTheme() {
-  const body = document.body;
-  const btn = document.getElementById('themeBtn');
-  if (body.getAttribute('data-theme') === 'light') {
-    body.setAttribute('data-theme', 'dark');
-    btn.innerText = '☀️';
-    if (colorPicker.value === '#000000') colorPicker.value = '#ffffff';
-  } else {
-    body.setAttribute('data-theme', 'light');
-    btn.innerText = '🌙';
-    if (colorPicker.value === '#ffffff') colorPicker.value = '#000000';
-  }
-  render();
-}
-
-function resize() {
-  canvas.width = window.innerWidth;
-  canvas.height = window.innerHeight;
-  render();
-}
-window.onresize = resize;
-resize();
-
-function setMode(m) {
-  mode = m;
-  document.querySelectorAll('#toolbar button').forEach(b => b.classList.remove('active'));
-  document.getElementById('btn-' + m).classList.add('active');
-}
-
-function getWorldPos(e) {
-  return {
-    x: (e.clientX - camera.x) / camera.zoom,
-    y: (e.clientY - camera.y) / camera.zoom
-  };
-}
-
-canvas.addEventListener('wheel', e => {
-  e.preventDefault();
-  const delta = e.deltaY > 0 ? 0.9 : 1.1;
-  const mouseBefore = getWorldPos(e);
-  camera.zoom *= delta;
-  camera.zoom = Math.max(0.1, Math.min(camera.zoom, 5));
-  const mouseAfter = getWorldPos(e);
-  camera.x += (mouseAfter.x - mouseBefore.x) * camera.zoom;
-  camera.y += (mouseAfter.y - mouseBefore.y) * camera.zoom;
-  render();
-}, { passive: false });
-
-canvas.addEventListener('pointerdown', e => {
-  lastMouse = { x: e.clientX, y: e.clientY };
-  const worldPos = getWorldPos(e);
-
-  if (e.button === 2) {
-    objects = objects.filter(o => !(worldPos.x > o.x && worldPos.x < o.x + o.w && worldPos.y > o.y && worldPos.y < o.y + o.h));
-    render();
-    return;
-  }
-
-  if (mode === 'draw') {
-    isDrawing = true;
-    lines.push({ points: [worldPos], color: colorPicker.value });
-  } else {
-    isPanning = true;
-  }
-});
-
-canvas.addEventListener('pointermove', e => {
-  const worldPos = getWorldPos(e);
-  if (isDrawing) {
-    lines[lines.length - 1].points.push(worldPos);
-    render();
-  } else if (isPanning) {
-    camera.x += e.clientX - lastMouse.x;
-    camera.y += e.clientY - lastMouse.y;
-    lastMouse = { x: e.clientX, y: e.clientY };
-    render();
-  }
-});
-
-window.addEventListener('pointerup', () => { isDrawing = false; isPanning = false; });
-canvas.oncontextmenu = (e) => e.preventDefault();
-
-function addMedia(e) {
-  const file = e.target.files[0];
-  if (!file) return;
-  const url = URL.createObjectURL(file);
-  const worldCenter = { x: (window.innerWidth/2 - camera.x) / camera.zoom, y: (window.innerHeight/2 - camera.y) / camera.zoom };
-  
-  if (file.type.startsWith('video')) {
-    const video = document.createElement('video');
-    video.src = url; video.muted = true; video.loop = true; video.play();
-    objects.push({ type: 'video', el: video, x: worldCenter.x - 200, y: worldCenter.y - 112, w: 400, h: 225 });
-    video.onloadeddata = render;
-  } else {
-    const img = new Image();
-    img.src = url;
-    img.onload = () => {
-      objects.push({ type: 'image', el: img, x: worldCenter.x - (img.width/4), y: worldCenter.y - (img.height/4), w: img.width/2, h: img.height/2 });
-      render();
+    let state = {
+        mode: 'move',
+        theme: 'light',
+        camera: { x: window.innerWidth/2, y: window.innerHeight/2, zoom: 1 },
+        objects: [], // { type: 'img/video/text', x, y, w, h, data: src/text }
+        selectedObj: null,
+        isDragging: false,
+        lastMouse: { x: 0, y: 0 }
     };
-  }
-}
 
-function render() {
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  drawGrid();
-  ctx.save();
-  ctx.translate(camera.x, camera.y);
-  ctx.scale(camera.zoom, camera.zoom);
-
-  objects.forEach(o => {
-    ctx.drawImage(o.el, o.x, o.y, o.w, o.h);
-    if (o.type === 'video') requestAnimationFrame(render);
-  });
-
-  lines.forEach(line => {
-    ctx.beginPath();
-    ctx.strokeStyle = line.color;
-    ctx.lineWidth = 2 / camera.zoom;
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-    ctx.moveTo(line.points[0].x, line.points[0].y);
-    line.points.forEach(p => ctx.lineTo(p.x, p.y));
-    ctx.stroke();
-  });
-  ctx.restore();
-}
-
-function drawGrid() {
-  const size = 50 * camera.zoom;
-  ctx.strokeStyle = getComputedStyle(document.body).getPropertyValue('--grid-color');
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  for (let x = camera.x % size; x < canvas.width; x += size) {
-    ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height);
-  }
-  for (let y = camera.y % size; y < canvas.height; y += size) {
-    ctx.moveTo(0, y); ctx.lineTo(canvas.width, y);
-  }
-  ctx.stroke();
-}
-
-function clearBoard() {
-  if(confirm("Очистить всё?")) { objects = []; lines = []; render(); }
-}
-
-async function saveProject() {
-  const data = JSON.stringify({ camera, lines, theme: document.body.getAttribute('data-theme') }); 
-  try {
-    if (!fileHandle) {
-      fileHandle = await window.showSaveFilePicker({ suggestedName: 'board.json' });
+    function init() {
+        window.addEventListener('resize', resize);
+        resize();
+        loadFromLocalStorage();
+        render();
     }
-    const writable = await fileHandle.createWritable();
-    await writable.write(data);
-    await writable.close();
-    alert("Сохранено!");
-  } catch (e) {
-    const blob = new Blob([data], {type: 'application/json'});
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = 'board.json'; a.click();
-  }
-}
 
-async function openProject() {
-  try {
-    const [handle] = await window.showOpenFilePicker();
-    fileHandle = handle;
-    const file = await fileHandle.getFile();
-    const content = JSON.parse(await file.text());
-    camera = content.camera;
-    lines = content.lines;
-    if (content.theme) {
-        document.body.setAttribute('data-theme', content.theme);
-        document.getElementById('themeBtn').innerText = content.theme === 'light' ? '🌙' : '☀️';
+    function resize() {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+        render();
     }
-    render();
-  } catch (e) { console.log(e); }
-}
+
+    function setMode(m) {
+        state.mode = m;
+        document.querySelectorAll('.panel button').forEach(b => b.classList.remove('active'));
+        document.getElementById('mode-' + m).classList.add('active');
+    }
+
+    // --- ЛОГИКА ОБЪЕКТОВ ---
+    function handleFile(e) {
+        const file = e.target.files[0];
+        if (!file) return;
+        const url = URL.createObjectURL(file);
+        const worldPos = { x: -state.camera.x / state.camera.zoom, y: -state.camera.y / state.camera.zoom };
+
+        if (file.type.startsWith('image')) {
+            const img = new Image();
+            img.src = url;
+            img.onload = () => {
+                state.objects.push({ type: 'image', x: worldPos.x, y: worldPos.y, w: img.width/2, h: img.height/2, el: img });
+                saveAndRender();
+            };
+        } else if (file.type.startsWith('video')) {
+            const video = document.createElement('video');
+            video.src = url; video.muted = true; video.loop = true; video.play();
+            state.objects.push({ type: 'video', x: worldPos.x, y: worldPos.y, w: 320, h: 180, el: video });
+            video.onloadeddata = saveAndRender;
+        }
+    }
+
+    // --- РЕНДЕРИНГ ---
+    function render() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        drawGrid();
+
+        ctx.save();
+        ctx.translate(state.camera.x, state.camera.y);
+        ctx.scale(state.camera.zoom, state.camera.zoom);
+
+        state.objects.forEach(obj => {
+            if (obj.type === 'image' || obj.type === 'video') {
+                ctx.drawImage(obj.el, obj.x, obj.y, obj.w, obj.h);
+            } else if (obj.type === 'text') {
+                ctx.fillStyle = state.theme === 'light' ? '#000' : '#fff';
+                ctx.font = "20px Arial";
+                ctx.fillText(obj.data, obj.x, obj.y);
+            }
+            
+            // Рамка выделения
+            if (state.selectedObj === obj) {
+                ctx.strokeStyle = '#007bff';
+                ctx.lineWidth = 2 / state.camera.zoom;
+                ctx.strokeRect(obj.x, obj.y, obj.w, obj.h);
+            }
+        });
+
+        ctx.restore();
+        if (state.objects.some(o => o.type === 'video')) requestAnimationFrame(render);
+    }
+
+    function drawGrid() {
+        const size = 50 * state.camera.zoom;
+        ctx.strokeStyle = state.theme === 'light' ? '#ddd' : '#333';
+        ctx.beginPath();
+        for (let x = state.camera.x % size; x < canvas.width; x += size) { ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); }
+        for (let y = state.camera.y % size; y < canvas.height; y += size) { ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); }
+        ctx.stroke();
+    }
+
+    // --- ВЗАИМОДЕЙСТВИЕ ---
+    canvas.onpointerdown = (e) => {
+        state.isDragging = true;
+        state.lastMouse = { x: e.clientX, y: e.clientY };
+        
+        const worldPos = {
+            x: (e.clientX - state.camera.x) / state.camera.zoom,
+            y: (e.clientY - state.camera.y) / state.camera.zoom
+        };
+
+        // Проверка клика по объекту
+        state.selectedObj = [...state.objects].reverse().find(o => 
+            worldPos.x > o.x && worldPos.x < o.x + o.w && worldPos.y > o.y && worldPos.y < o.y + o.h
+        );
+
+        if (state.mode === 'text' && !state.selectedObj) {
+            showTextEditor(e.clientX, e.clientY, worldPos);
+        }
+        render();
+    };
+
+    canvas.onpointermove = (e) => {
+        if (!state.isDragging) return;
+        const dx = (e.clientX - state.lastMouse.x) / state.camera.zoom;
+        const dy = (e.clientY - state.lastMouse.y) / state.camera.zoom;
+
+        if (state.selectedObj && state.mode === 'move') {
+            state.selectedObj.x += dx;
+            state.selectedObj.y += dy;
+        } else if (state.mode === 'move') {
+            state.camera.x += e.clientX - state.lastMouse.x;
+            state.camera.y += e.clientY - state.lastMouse.y;
+        }
+        state.lastMouse = { x: e.clientX, y: e.clientY };
+        render();
+    };
+
+    window.onpointerup = () => { state.isDragging = false; saveToLocalStorage(); };
+
+    // Зум
+    canvas.onwheel = (e) => {
+        e.preventDefault();
+        const factor = e.deltaY > 0 ? 0.9 : 1.1;
+        state.camera.zoom *= factor;
+        render();
+    };
+
+    // --- ФУНКЦИИ ТЕКСТА ---
+    function showTextEditor(screenX, screenY, worldPos) {
+        editor.style.display = 'block';
+        editor.style.left = screenX + 'px';
+        editor.style.top = screenY + 'px';
+        editor.focus();
+        editor.onblur = () => {
+            if (editor.innerText.trim()) {
+                state.objects.push({ 
+                    type: 'text', x: worldPos.x, y: worldPos.y, 
+                    w: 100, h: 30, data: editor.innerText 
+                });
+            }
+            editor.style.display = 'none';
+            editor.innerText = '';
+            saveAndRender();
+        };
+    }
+
+    // --- СОХРАНЕНИЕ ---
+    function saveAndRender() { saveToLocalStorage(); render(); }
+
+    function saveToLocalStorage() {
+        const rawObjects = state.objects.map(o => ({...o, el: null})); // Картинки не сохраняем в JSON напрямую
+        localStorage.setItem('infinite_board_data', JSON.stringify({
+            camera: state.camera,
+            objects: rawObjects.filter(o => o.type === 'text') // Пока только текст, картинки требуют IndexedDB
+        }));
+    }
+
+    function loadFromLocalStorage() {
+        const data = localStorage.getItem('infinite_board_data');
+        if (data) {
+            const parsed = JSON.parse(data);
+            state.camera = parsed.camera;
+            // Здесь будет логика загрузки картинок
+        }
+    }
+
+    function toggleTheme() {
+        state.theme = state.theme === 'light' ? 'dark' : 'light';
+        document.body.setAttribute('data-theme', state.theme);
+        render();
+    }
+
+    init();
 </script>
 </body>
 </html>
