@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Infinite Board v5.2</title>
+    <title>Infinite Board v6.0</title>
     <style>
         :root {
             --bg: #f4f4f9;
@@ -150,13 +150,79 @@
             margin-left: 10px;
             transition: 0.3s;
         }
+
+        /* Modal Styles */
+        .modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 10000;
+            opacity: 0;
+            pointer-events: none;
+            transition: 0.2s;
+        }
+
+        .modal-overlay.open {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .modal-content {
+            background: var(--panel);
+            padding: 20px;
+            border-radius: 16px;
+            width: 90%;
+            max-width: 400px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+            color: var(--text);
+        }
+
+        .modal-content textarea {
+            width: 100%;
+            height: 100px;
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 8px;
+            border: 1px solid #ddd;
+            background: var(--bg);
+            color: var(--text);
+            font-family: inherit;
+            resize: vertical;
+            box-sizing: border-box;
+        }
+
+        .modal-controls {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        .modal-controls select,
+        .modal-controls input {
+            padding: 8px;
+            border-radius: 8px;
+            border: 1px solid #ddd;
+            background: var(--bg);
+            color: var(--text);
+        }
+
+        .primary-btn {
+            background: var(--accent);
+            color: white;
+            padding: 8px 16px;
+            border-radius: 8px;
+            font-weight: 500;
+        }
     </style>
 </head>
 
 <body class="mode-move">
 
     <div id="login-screen">
-        <h1 style="color:var(--text); margin-bottom: 20px;">Infinite Board v5.2</h1>
+        <h1 style="color:var(--text); margin-bottom: 20px;">Infinite Board v6.0</h1>
         <button class="login-btn" onclick="login()">Войти через Google</button>
     </div>
 
@@ -166,6 +232,7 @@
             <div style="width: 1px; height: 20px; background: #ddd; margin: 0 5px;"></div>
             <button id="mode-move" class="active" onclick="setMode('move')" title="Рука (Двигать/Выбирать)">🖐️</button>
             <button id="mode-draw" onclick="setMode('draw')" title="Карандаш">✏️</button>
+            <button id="mode-text" onclick="setMode('text')" title="Текст">📝</button>
             <button id="mode-eraser" onclick="setMode('eraser')" title="Ластик">🧽</button>
             <div style="width: 1px; height: 20px; background: #ddd; margin: 0 5px;"></div>
             <button onclick="resetCamera()" title="Центр">🎯</button>
@@ -178,6 +245,28 @@
             <button onclick="redo()">↪️</button>
             <button onclick="toggleTheme()">🌓</button>
             <div id="status-dot"></div>
+        </div>
+    </div>
+
+    <!-- Text Modal -->
+    <div id="text-modal" class="modal-overlay">
+        <div class="modal-content">
+            <h3 style="margin-top:0">Текст</h3>
+            <textarea id="text-input" placeholder="Введите текст..."></textarea>
+            <div class="modal-controls">
+                <select id="text-size">
+                    <option value="16">Мелкий</option>
+                    <option value="24" selected>Средний</option>
+                    <option value="36">Крупный</option>
+                    <option value="48">Большой</option>
+                    <option value="72">Огромный</option>
+                </select>
+                <input type="color" id="text-color" value="#000000">
+            </div>
+            <div class="modal-controls" style="justify-content: flex-end;">
+                <button onclick="closeTextModal()">Отмена</button>
+                <button class="primary-btn" onclick="confirmText()">Готово</button>
+            </div>
         </div>
     </div>
 
@@ -246,15 +335,28 @@
 
             // 2. Objects
             state.objects.forEach(obj => {
-                if (obj.el) {
-                    try { ctx.drawImage(obj.el, obj.x, obj.y, obj.w, obj.h); } catch (e) { }
-                    // Video Play Icon
-                    if (obj.type === 'video' && obj.el.paused) {
-                        const cx = obj.x + obj.w / 2, cy = obj.y + obj.h / 2, r = Math.min(obj.w, obj.h) * 0.15;
-                        ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.beginPath(); ctx.arc(cx, cy, r, 0, 7); ctx.fill();
-                        ctx.fillStyle = 'white'; ctx.beginPath(); ctx.moveTo(cx - r * 0.2, cy - r * 0.4); ctx.lineTo(cx + r * 0.5, cy); ctx.lineTo(cx - r * 0.2, cy + r * 0.4); ctx.fill();
+                if (obj.type === 'image' || obj.type === 'video') {
+                    if (obj.el) {
+                        try { ctx.drawImage(obj.el, obj.x, obj.y, obj.w, obj.h); } catch (e) { }
+                        // Video Play Icon
+                        if (obj.type === 'video' && obj.el.paused) {
+                            const cx = obj.x + obj.w / 2, cy = obj.y + obj.h / 2, r = Math.min(obj.w, obj.h) * 0.15;
+                            ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.beginPath(); ctx.arc(cx, cy, r, 0, 7); ctx.fill();
+                            ctx.fillStyle = 'white'; ctx.beginPath(); ctx.moveTo(cx - r * 0.2, cy - r * 0.4); ctx.lineTo(cx + r * 0.5, cy); ctx.lineTo(cx - r * 0.2, cy + r * 0.4); ctx.fill();
+                        }
                     }
+                } else if (obj.type === 'text') {
+                    ctx.save();
+                    ctx.font = `${obj.fontSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+                    ctx.fillStyle = obj.color;
+                    ctx.textBaseline = 'top';
+                    const lines = obj.text.split('\n');
+                    lines.forEach((line, i) => {
+                        ctx.fillText(line, obj.x, obj.y + (i * obj.fontSize * 1.2));
+                    });
+                    ctx.restore();
                 }
+
                 // Selection Frame
                 if (state.selectedObj === obj) {
                     ctx.strokeStyle = '#4285F4'; ctx.lineWidth = 2 / state.camera.zoom;
@@ -340,8 +442,18 @@
 
             if (state.mode === 'move') {
                 if (state.isResizing && state.selectedObj) {
-                    state.selectedObj.w += dx;
-                    state.selectedObj.h = state.selectedObj.w / (state.selectedObj.ratio || 1.77);
+                    if (state.selectedObj.type === 'text') {
+                        const oldW = state.selectedObj.w;
+                        state.selectedObj.w += dx;
+                        const scale = state.selectedObj.w / oldW;
+                        state.selectedObj.fontSize *= scale;
+                        // Recalculate H based on new fontSize
+                        const lines = state.selectedObj.text.split('\n');
+                        state.selectedObj.h = lines.length * state.selectedObj.fontSize * 1.2;
+                    } else {
+                        state.selectedObj.w += dx;
+                        state.selectedObj.h = state.selectedObj.w / (state.selectedObj.ratio || 1.77);
+                    }
                 } else if (state.isMovingObj && state.selectedObj) {
                     state.selectedObj.x += dx; state.selectedObj.y += dy;
                 } else if (state.isDragging) {
@@ -388,7 +500,7 @@
                     // Повторная проверка ресайза (если нажали на угол невыбранного объекта)
                     if (isHandleHit(hit, w)) {
                         state.isResizing = true;
-                    } else {
+                    } else if (state.mode === 'move') {
                         state.isMovingObj = true;
                         if (hit.type === 'video' && hit.el) {
                             hit.el.paused ? hit.el.play() : hit.el.pause();
@@ -396,8 +508,20 @@
                         }
                     }
                 } else {
-                    state.isDragging = true;
-                    state.selectedObj = null;
+                    if (state.mode === 'text') {
+                        openTextModal(w);
+                    } else {
+                        state.isDragging = true;
+                        state.selectedObj = null;
+                    }
+                }
+            }
+            else if (state.mode === 'text') {
+                if (hit && hit.type === 'text') {
+                    state.selectedObj = hit;
+                    openTextModal(null, hit);
+                } else {
+                    openTextModal(w);
                 }
             }
             else if (state.mode === 'draw') {
@@ -456,19 +580,32 @@
             render();
         }
 
-        async function saveHistoryAndSync() {
+        async function saveHistoryAndSync(skipFirebase = false) {
             const snapshot = JSON.stringify({ objects: state.objects.map(({ el, ...rest }) => rest), lines: state.lines });
             if (historyStep === -1 || history[historyStep] !== snapshot) {
                 history = history.slice(0, historyStep + 1);
                 history.push(snapshot);
                 historyStep++;
             }
-            if (!currentBoardId) return;
-            const status = document.getElementById('status-dot');
-            status.style.background = 'orange';
-            const cleanObjects = state.objects.map(({ el, ...o }) => o);
-            await updateDoc(doc(db, "boards", currentBoardId), { objects: cleanObjects, lines: state.lines });
-            status.style.background = '#4CAF50';
+            if (skipFirebase || !currentBoardId) return;
+            syncToFirebase();
+        }
+
+        let syncTimeout = null;
+        async function syncToFirebase() {
+            if (syncTimeout) clearTimeout(syncTimeout);
+            syncTimeout = setTimeout(async () => {
+                const status = document.getElementById('status-dot');
+                status.style.background = 'orange';
+                const cleanObjects = state.objects.map(({ el, ...o }) => o);
+                try {
+                    await updateDoc(doc(db, "boards", currentBoardId), { objects: cleanObjects, lines: state.lines });
+                    status.style.background = '#4CAF50';
+                } catch (e) {
+                    console.error("Firebase sync error:", e);
+                    status.style.background = 'red';
+                }
+            }, 500); // 500ms debounce
         }
 
         window.handleFile = async (e) => {
@@ -497,6 +634,7 @@
                     };
                 }
             } catch (e) { alert("Ошибка загрузки"); status.style.background = 'red'; }
+            e.target.value = ''; // Reset file input
         };
 
         // --- AUTH & BOARD ---
@@ -538,10 +676,124 @@
         };
         window.toggleSidebar = () => document.getElementById('sidebar').classList.toggle('open');
         window.resetCamera = () => { state.camera = { x: window.innerWidth / 2, y: window.innerHeight / 2, zoom: 1 }; render(); };
-        window.deleteSelected = () => { if (state.selectedObj) { state.objects = state.objects.filter(o => o !== state.selectedObj); state.selectedObj = null; saveHistoryAndSync(); render(); } };
-        window.undo = () => { if (historyStep > 0) { historyStep--; const d = JSON.parse(history[historyStep]); state.lines = d.lines; syncObjects(d.objects); saveHistoryAndSync(); } };
-        window.redo = () => { if (historyStep < history.length - 1) { historyStep++; const d = JSON.parse(history[historyStep]); state.lines = d.lines; syncObjects(d.objects); saveHistoryAndSync(); } };
+        window.deleteSelected = () => {
+            if (state.selectedObj) {
+                if (state.selectedObj.type === 'video' && state.selectedObj.el) {
+                    state.selectedObj.el.pause();
+                    state.selectedObj.el.src = "";
+                    state.selectedObj.el.load();
+                }
+                state.objects = state.objects.filter(o => o !== state.selectedObj);
+                state.selectedObj = null;
+                saveHistoryAndSync();
+                render();
+            }
+        };
+        window.undo = () => {
+            if (historyStep > 0) {
+                historyStep--;
+                const d = JSON.parse(history[historyStep]);
+                state.lines = d.lines;
+                syncObjects(d.objects);
+                syncToFirebase(); // Sync to cloud without adding to history
+            }
+        };
+        window.redo = () => {
+            if (historyStep < history.length - 1) {
+                historyStep++;
+                const d = JSON.parse(history[historyStep]);
+                state.lines = d.lines;
+                syncObjects(d.objects);
+                syncToFirebase(); // Sync to cloud without adding to history
+            }
+        };
         window.toggleTheme = () => { state.theme = state.theme === 'light' ? 'dark' : 'light'; document.body.setAttribute('data-theme', state.theme); render(); };
+
+        // --- TEXT MODAL LOGIC ---
+        let currentEditingPos = null;
+        window.openTextModal = (pos, obj = null) => {
+            const modal = document.getElementById('text-modal');
+            const input = document.getElementById('text-input');
+            const size = document.getElementById('text-size');
+            const color = document.getElementById('text-color');
+
+            state.editingObj = obj;
+            currentEditingPos = pos;
+
+            if (obj) {
+                input.value = obj.text;
+                size.value = obj.fontSize;
+                color.value = obj.color;
+            } else {
+                input.value = '';
+                size.value = "24";
+                color.value = state.theme === 'light' ? '#000000' : '#ffffff';
+            }
+
+            modal.classList.add('open');
+            setTimeout(() => input.focus(), 100);
+        };
+
+        window.closeTextModal = () => {
+            document.getElementById('text-modal').classList.remove('open');
+            state.editingObj = null;
+        };
+
+        window.confirmText = () => {
+            const text = document.getElementById('text-input').value.trim();
+            const fontSize = parseInt(document.getElementById('text-size').value);
+            const color = document.getElementById('text-color').value;
+
+            if (!text) {
+                if (state.editingObj) {
+                    state.objects = state.objects.filter(o => o !== state.editingObj);
+                    saveHistoryAndSync();
+                }
+                closeTextModal();
+                render();
+                return;
+            }
+
+            // Calculate text dimensions
+            ctx.font = `${fontSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+            const lines = text.split('\n');
+            let maxW = 0;
+            lines.forEach(l => maxW = Math.max(maxW, ctx.measureText(l).width));
+            const h = lines.length * fontSize * 1.2;
+
+            if (state.editingObj) {
+                state.editingObj.text = text;
+                state.editingObj.fontSize = fontSize;
+                state.editingObj.color = color;
+                state.editingObj.w = maxW;
+                state.editingObj.h = h;
+            } else {
+                const pos = currentEditingPos || getWorldPos({ clientX: window.innerWidth / 2, clientY: window.innerHeight / 2 });
+                state.objects.push({
+                    type: 'text',
+                    x: pos.x,
+                    y: pos.y,
+                    w: maxW,
+                    h: h,
+                    text: text,
+                    fontSize: fontSize,
+                    color: color
+                });
+            }
+
+            saveHistoryAndSync();
+            closeTextModal();
+            render();
+        };
+
+        // Double click to edit text
+        canvas.addEventListener('dblclick', e => {
+            const w = getWorldPos(e);
+            const hit = [...state.objects].reverse().find(o => o.type === 'text' && w.x > o.x && w.x < o.x + o.w && w.y > o.y && w.y < o.y + o.h);
+            if (hit) {
+                openTextModal(null, hit);
+            }
+        });
     </script>
 </body>
 
