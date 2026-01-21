@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Infinite Board v4.4</title>
+    <title>Infinite Board v4.5</title>
     <style>
         :root { --bg: #f0f0f0; --panel: #ffffff; --accent: #007bff; --text: #333; }
         [data-theme="dark"] { --bg: #1a1a1a; --panel: #333; --accent: #007bff; --text: #eee; }
@@ -12,21 +12,27 @@
         #ui-layer { position: fixed; top: 0; left: 0; width: 100%; pointer-events: none; z-index: 2000; display: flex; flex-direction: column; align-items: center; }
         .panel { pointer-events: auto; background: var(--panel); padding: 5px 12px; border-radius: 30px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); display: flex; gap: 6px; align-items: center; margin: 8px; border: 1px solid rgba(0,0,0,0.1); }
         
+        #sidebar { position: fixed; top: 60px; left: 10px; width: 220px; background: var(--panel); border-radius: 15px; padding: 15px; pointer-events: auto; box-shadow: 0 4px 15px rgba(0,0,0,0.1); transform: translateX(-250px); transition: 0.3s; z-index: 2001; max-height: 80vh; overflow-y: auto; }
+        #sidebar.open { transform: translateX(0); }
+        
         #canvas-container { position: relative; width: 100%; height: 100%; }
         #canvas { position: absolute; inset: 0; z-index: 100; touch-action: none; background: transparent; }
-        #dom-layer { position: absolute; inset: 0; z-index: 50; pointer-events: none; }
+        /* Важно: dom-layer теперь имеет z-index выше canvas только в определенных режимах или через pointer-events */
+        #dom-layer { position: absolute; inset: 0; z-index: 10; pointer-events: none; }
         
-        .yt-wrapper { position: absolute; pointer-events: auto; background: #000; transition: none; }
-        .yt-wrapper iframe { width: 100%; height: 100%; border: none; pointer-events: auto; }
-        .yt-overlay { position: absolute; inset: 0; z-index: 10; cursor: move; display: none; }
+        .yt-wrapper { position: absolute; pointer-events: auto; background: #000; }
+        .yt-wrapper iframe { width: 100%; height: 100%; border: none; }
+        .yt-overlay { position: absolute; inset: 0; z-index: 20; cursor: move; display: none; background: rgba(0,0,0,0.01); }
         .mode-move .yt-overlay { display: block; }
 
-        button { background: #eee; border: none; padding: 8px 12px; border-radius: 15px; cursor: pointer; font-weight: bold; }
+        button { background: #eee; border: none; padding: 8px 12px; border-radius: 15px; cursor: pointer; font-weight: bold; color: #333; }
         button.active { background: var(--accent) !important; color: white !important; }
+        .board-item { padding: 10px; border-radius: 8px; cursor: pointer; margin-bottom: 5px; color: var(--text); }
+        .board-item.active { background: rgba(0,123,255,0.1); border: 1px solid var(--accent); }
         #login-screen { position: fixed; inset: 0; background: var(--bg); z-index: 3000; display: flex; justify-content: center; align-items: center; flex-direction: column; }
     </style>
 </head>
-<body>
+<body class="mode-move">
 
 <div id="login-screen">
     <h1>Infinite Board</h1>
@@ -35,6 +41,7 @@
 
 <div id="ui-layer" style="display:none;">
     <div class="panel">
+        <button onclick="toggleSidebar()">☰</button>
         <button id="mode-move" class="active" onclick="setMode('move')">🖐️</button>
         <button id="mode-draw" onclick="setMode('draw')">✏️</button>
         <button id="mode-eraser" onclick="setMode('eraser')">🧽</button>
@@ -52,6 +59,13 @@
     </div>
 </div>
 
+<div id="sidebar">
+    <h3>Мои Доски</h3>
+    <div id="boards-list"></div>
+    <button onclick="createNewBoard()" style="width:100%; background:var(--accent); color:white; margin-top:10px;">+ Новая доска</button>
+    <button onclick="logout()" style="width:100%; margin-top:20px;">Выход</button>
+</div>
+
 <div id="canvas-container">
     <canvas id="canvas"></canvas>
     <div id="dom-layer"></div>
@@ -59,7 +73,7 @@
 
 <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-    import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+    import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
     import { getFirestore, doc, onSnapshot, updateDoc, collection, addDoc, query, where, getDocs } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
     const app = initializeApp({
@@ -72,9 +86,9 @@
     const auth = getAuth(app), db = getFirestore(app);
 
     let state = { mode: 'move', theme: 'light', camera: { x: window.innerWidth/2, y: window.innerHeight/2, zoom: 1 }, objects: [], lines: [], selectedObj: null };
-    let currentUser = null, currentBoardId = null;
+    let currentUser = null, currentBoardId = null, unsubscribeBoard = null;
 
-    // --- YT & CLOUDINARY ---
+    // --- YT & LOGIC ---
     window.addYouTube = () => {
         const url = prompt("Ссылка на YouTube:");
         const id = url?.match(/(?:youtu\.be\/|youtube\.com\/(?:.*v=|.*\/|.*embed\/))([^?&]+)/);
@@ -85,22 +99,6 @@
         }
     };
 
-    window.handleFile = async (e) => {
-        const file = e.target.files[0]; if (!file) return;
-        const formData = new FormData(); formData.append('file', file); formData.append('upload_preset', 'ml_default');
-        const res = await fetch(`https://api.cloudinary.com/v1_1/dacvtrygp/auto/upload`, { method: 'POST', body: formData });
-        const data = await res.json();
-        const pos = { x: (window.innerWidth/2 - state.camera.x)/state.camera.zoom, y: (window.innerHeight/2 - state.camera.y)/state.camera.zoom };
-        if (file.type.startsWith('image')) {
-            const img = new Image(); img.src = data.secure_url;
-            img.onload = () => { state.objects.push({ type: 'image', x: pos.x, y: pos.y, w: img.width/2, h: img.height/2, url: data.secure_url, ratio: img.width/img.height, el: img }); triggerSave(); render(); };
-        } else {
-            const vid = document.createElement('video'); vid.src = data.secure_url; vid.muted = true; vid.loop = true; vid.playsInline = true;
-            vid.onloadedmetadata = () => { vid.currentTime = 0.1; state.objects.push({ type: 'video', x: pos.x, y: pos.y, w: 320, h: 320/(vid.videoWidth/vid.videoHeight), url: data.secure_url, ratio: vid.videoWidth/vid.videoHeight, el: vid }); triggerSave(); render(); };
-        }
-    };
-
-    // --- CORE ---
     function syncObjects(data) {
         const dataIds = data.map(o => o.url || o.ytId);
         state.objects = state.objects.filter(o => {
@@ -113,7 +111,7 @@
             else {
                 if (obj.type === 'youtube') {
                     const wrap = document.createElement('div'); wrap.className = 'yt-wrapper';
-                    wrap.innerHTML = `<div class="yt-overlay"></div><iframe src="https://www.youtube.com/embed/${obj.ytId}"></iframe>`;
+                    wrap.innerHTML = `<div class="yt-overlay"></div><iframe src="https://www.youtube.com/embed/${obj.ytId}?enablejsapi=1"></iframe>`;
                     document.getElementById('dom-layer').appendChild(wrap);
                     obj.dom = wrap;
                 } else if (obj.type === 'image') { obj.el = new Image(); obj.el.src = obj.url; }
@@ -122,12 +120,6 @@
             }
         });
         render();
-    }
-
-    function triggerSave() {
-        if (!currentBoardId) return;
-        const toSave = state.objects.map(({el, dom, ...o}) => o);
-        updateDoc(doc(db, "boards", currentBoardId), { objects: toSave, lines: state.lines });
     }
 
     const canvas = document.getElementById('canvas'), ctx = canvas.getContext('2d');
@@ -139,19 +131,27 @@
         const w = { x: (m.x - state.camera.x)/state.camera.zoom, y: (m.y - state.camera.y)/state.camera.zoom };
         state.lastMouse = m;
 
-        if (state.mode !== 'move') {
+        // Если мы в режиме рисования, позволяем кликам проходить сквозь холст, если не попали в объект
+        const hit = [...state.objects].reverse().find(o => w.x > o.x && w.x < o.x + o.w && w.y > o.y && w.y < o.y + o.h);
+        
+        if (state.mode !== 'move' && !hit) {
             state.isDrawing = true;
             if (state.mode === 'draw') state.lines.push({ points: [w], color: state.theme==='light'?'#000':'#fff' });
             return;
         }
 
-        const hit = [...state.objects].reverse().find(o => w.x > o.x && w.x < o.x + o.w && w.y > o.y && w.y < o.y + o.h);
         state.selectedObj = hit;
-        if (hit) {
+        if (hit && state.mode === 'move') {
             const s = 30 / state.camera.zoom;
             if (w.x > hit.x + hit.w - s && w.y > hit.y + hit.h - s) state.isResizing = true;
             else { state.isDragging = true; if(hit.el && hit.type==='video') hit.el.paused ? hit.el.play() : hit.el.pause(); }
-        } else state.isDragging = true;
+        } else if (state.mode === 'move') { state.isDragging = true; }
+        
+        // Магия для YouTube: если мы НЕ в режиме перемещения и кликнули по видео — отключаем холст на миг
+        if (hit?.type === 'youtube' && state.mode !== 'move') {
+            canvas.style.pointerEvents = 'none';
+            setTimeout(() => canvas.style.pointerEvents = 'auto', 400);
+        }
         render();
     });
 
@@ -189,16 +189,13 @@
 
     function render() {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
-        
-        // Сетка (теперь всегда снизу)
         const g = 50 * state.camera.zoom;
-        ctx.beginPath(); ctx.strokeStyle = state.theme==='light'?'#ddd':'#222';
+        ctx.beginPath(); ctx.strokeStyle = state.theme==='light'?'#ddd':'#333';
         for(let x=state.camera.x%g; x<canvas.width; x+=g){ ctx.moveTo(x,0); ctx.lineTo(x,canvas.height); }
         for(let y=state.camera.y%g; y<canvas.height; y+=g){ ctx.moveTo(0,y); ctx.lineTo(canvas.width,y); }
         ctx.stroke();
 
         ctx.save(); ctx.translate(state.camera.x, state.camera.y); ctx.scale(state.camera.zoom, state.camera.zoom);
-        
         state.objects.forEach(obj => {
             if (obj.type === 'youtube' && obj.dom) {
                 obj.dom.style.transform = `translate(${obj.x * state.camera.zoom + state.camera.x}px, ${obj.y * state.camera.zoom + state.camera.y}px) scale(${state.camera.zoom})`;
@@ -212,36 +209,52 @@
                     ctx.fillStyle = 'white'; ctx.beginPath(); ctx.moveTo(cx-r*0.3, cy-r*0.5); ctx.lineTo(cx+r*0.5, cy); ctx.lineTo(cx-r*0.3, cy+r*0.5); ctx.fill();
                 }
             }
-            if (state.selectedObj === obj) {
+            if (state.selectedObj === obj && state.mode === 'move') {
                 ctx.strokeStyle = '#007bff'; ctx.lineWidth = 2/state.camera.zoom; ctx.strokeRect(obj.x, obj.y, obj.w, obj.h);
                 ctx.fillStyle = '#007bff'; ctx.fillRect(obj.x + obj.w - 15/state.camera.zoom, obj.y + obj.h - 15/state.camera.zoom, 30/state.camera.zoom, 30/state.camera.zoom);
             }
         });
-        
         state.lines.forEach(l => {
             ctx.beginPath(); ctx.strokeStyle = l.color; ctx.lineWidth = 3/state.camera.zoom; ctx.lineCap='round';
             l.points.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); ctx.stroke();
         });
         ctx.restore();
-        if (state.objects.some(o => o.type === 'video' && o.el && !o.el.paused)) requestAnimationFrame(render);
     }
 
-    // --- AUTH ---
-    onAuthStateChanged(auth, async user => {
-        if(user){
-            currentUser = user; document.getElementById('login-screen').style.display='none'; document.getElementById('ui-layer').style.display='flex';
-            const q = query(collection(db, "boards"), where("ownerId", "==", user.uid));
-            const snap = await getDocs(q);
-            if (snap.empty) {
-                const ref = await addDoc(collection(db, "boards"), { name: "Main", ownerId: user.uid, objects: [], lines: [] });
-                currentBoardId = ref.id;
-            } else { currentBoardId = snap.docs[0].id; }
-            onSnapshot(doc(db, "boards", currentBoardId), d => { if(d.exists() && !state.isDragging && !state.isResizing) syncObjects(d.data().objects || []); });
-        }
+    // --- FIREBASE UI ---
+    async function loadBoardsList() {
+        const q = query(collection(db, "boards"), where("ownerId", "==", currentUser.uid));
+        const snap = await getDocs(q);
+        const list = document.getElementById('boards-list'); list.innerHTML = '';
+        snap.forEach(d => {
+            const item = document.createElement('div'); item.className = `board-item ${currentBoardId===d.id?'active':''}`;
+            item.innerText = d.data().name || "Без названия";
+            item.onclick = () => openBoard(d.id); list.appendChild(item);
+        });
+    }
+
+    function openBoard(id) {
+        if (unsubscribeBoard) unsubscribeBoard();
+        currentBoardId = id;
+        unsubscribeBoard = onSnapshot(doc(db, "boards", id), d => { if(d.exists() && !state.isDragging && !state.isResizing) syncObjects(d.data().objects || [], d.data().lines || []); });
+        loadBoardsList(); document.getElementById('sidebar').classList.remove('open');
+    }
+
+    window.createNewBoard = async () => {
+        const name = prompt("Название доски:"); if(!name) return;
+        const ref = await addDoc(collection(db, "boards"), { name, ownerId: currentUser.uid, objects: [], lines: [] });
+        openBoard(ref.id);
+    };
+
+    onAuthStateChanged(auth, user => {
+        if(user){ currentUser = user; document.getElementById('login-screen').style.display='none'; document.getElementById('ui-layer').style.display='flex'; loadBoardsList(); }
     });
+
     window.login = () => signInWithPopup(auth, new GoogleAuthProvider());
+    window.logout = () => signOut(auth).then(() => location.reload());
+    window.toggleSidebar = () => document.getElementById('sidebar').classList.toggle('open');
     window.setMode = m => { state.mode = m; document.body.className = 'mode-'+m; document.querySelectorAll('.panel button').forEach(b => b.classList.toggle('active', b.id === 'mode-'+m)); };
-    window.resetCamera = () => { state.camera = { x: window.innerWidth/2, y: window.innerHeight/2, zoom: 1 }; render(); };
+    window.triggerSave = () => { if(currentBoardId) updateDoc(doc(db, "boards", currentBoardId), { objects: state.objects.map(({el, dom, ...o}) => o), lines: state.lines }); };
     window.deleteSelected = () => { if(state.selectedObj){ if(state.selectedObj.dom) state.selectedObj.dom.remove(); state.objects = state.objects.filter(o => o !== state.selectedObj); state.selectedObj = null; triggerSave(); render(); } };
 </script>
 </body>
