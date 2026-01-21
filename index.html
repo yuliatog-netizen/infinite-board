@@ -3,14 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Infinite Board v5.1 Stable</title>
+    <title>Infinite Board v5.2</title>
     <style>
         :root { --bg: #f4f4f9; --panel: #ffffff; --accent: #4285F4; --text: #333; }
         [data-theme="dark"] { --bg: #1e1e1e; --panel: #2d2d2d; --accent: #64b5f6; --text: #eee; }
         
         body, html { margin: 0; padding: 0; height: 100%; overflow: hidden; background: var(--bg); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
         
-        #canvas { display: block; touch-action: none; cursor: crosshair; }
+        #canvas { display: block; touch-action: none; cursor: default; }
         
         #ui-layer { position: fixed; top: 0; left: 0; width: 100%; pointer-events: none; z-index: 1000; display: flex; flex-direction: column; align-items: center; }
         .panel { pointer-events: auto; background: var(--panel); padding: 8px 16px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.15); display: flex; gap: 8px; align-items: center; margin-top: 10px; }
@@ -34,7 +34,7 @@
 <body class="mode-move">
 
 <div id="login-screen">
-    <h1 style="color:var(--text); margin-bottom: 20px;">Infinite Board v5.1</h1>
+    <h1 style="color:var(--text); margin-bottom: 20px;">Infinite Board v5.2</h1>
     <button class="login-btn" onclick="login()">Войти через Google</button>
 </div>
 
@@ -128,7 +128,7 @@
                 ctx.strokeRect(obj.x, obj.y, obj.w, obj.h);
                 // Resize Handle
                 ctx.fillStyle = '#4285F4';
-                const s = 12 / state.camera.zoom;
+                const s = 14 / state.camera.zoom;
                 ctx.fillRect(obj.x + obj.w - s/2, obj.y + obj.h - s/2, s, s);
             }
         });
@@ -145,49 +145,33 @@
         if (state.objects.some(o => o.type === 'video' && o.el && !o.el.paused)) requestAnimationFrame(render);
     }
 
-    // --- INTERACTION (UNIFIED TOOL) ---
+    // --- INTERACTION ---
     function getWorldPos(e) { return { x: (e.clientX - state.camera.x)/state.camera.zoom, y: (e.clientY - state.camera.y)/state.camera.zoom }; }
     
-    canvas.addEventListener('pointerdown', e => {
-        const m = { x: e.clientX, y: e.clientY };
-        const w = getWorldPos(e);
-        state.lastMouse = m;
-
-        // Hit test
-        const hit = [...state.objects].reverse().find(o => w.x > o.x && w.x < o.x + o.w && w.y > o.y && w.y < o.y + o.h);
-
-        if (state.mode === 'move') {
-            if (hit) {
-                // Object interaction priority
-                state.selectedObj = hit;
-                const s = 30 / state.camera.zoom; // Handle size
-                if (w.x > hit.x + hit.w - s && w.y > hit.y + hit.h - s) {
-                    state.isResizing = true; // Resize
-                } else {
-                    state.isMovingObj = true; // Move Object
-                    // Toggle Video
-                    if(hit.type === 'video' && hit.el) {
-                        hit.el.paused ? hit.el.play() : hit.el.pause();
-                        render();
-                    }
-                }
-            } else {
-                state.isDragging = true; // Pan Camera
-                state.selectedObj = null;
-            }
-        } 
-        else if (state.mode === 'draw') {
-            state.isDrawing = true;
-            state.lines.push({ points: [w], color: state.theme==='light'?'#000':'#fff' });
-        }
-        else if (state.mode === 'eraser') {
-            state.isDrawing = true; // Erase logic in move
-        }
-        render();
-    });
+    // Check if clicking resize handle
+    function isHandleHit(obj, w) {
+        if (!obj) return false;
+        const s = 40 / state.camera.zoom; // Большой хитбокс для удобства
+        return (w.x > obj.x + obj.w - s && w.y > obj.y + obj.h - s);
+    }
 
     canvas.addEventListener('pointermove', e => {
-        if (!state.lastMouse) return;
+        if (!state.lastMouse) {
+            // Logic for cursor change on hover
+            const w = getWorldPos(e);
+            const hoverObj = [...state.objects].reverse().find(o => w.x > o.x && w.x < o.x + o.w && w.y > o.y && w.y < o.y + o.h);
+            
+            if (state.selectedObj && isHandleHit(state.selectedObj, w) && state.mode === 'move') {
+                canvas.style.cursor = 'nwse-resize';
+            } else if (state.mode === 'move') {
+                canvas.style.cursor = hoverObj ? 'move' : 'default';
+            } else {
+                canvas.style.cursor = 'crosshair';
+            }
+            return;
+        }
+
+        // Dragging Logic
         const m = { x: e.clientX, y: e.clientY };
         const dx = (m.x - state.lastMouse.x)/state.camera.zoom;
         const dy = (m.y - state.lastMouse.y)/state.camera.zoom;
@@ -203,13 +187,54 @@
                 state.camera.x += m.x - state.lastMouse.x;
                 state.camera.y += m.y - state.lastMouse.y;
             }
-        }
-        else if (state.isDrawing) {
+        } else if (state.isDrawing) {
             if (state.mode === 'draw') state.lines[state.lines.length-1].points.push(w);
             else if (state.mode === 'eraser') state.lines = state.lines.filter(l => !l.points.some(p => Math.hypot(p.x-w.x, p.y-w.y)<20/state.camera.zoom));
         }
 
         state.lastMouse = m; render();
+    });
+
+    canvas.addEventListener('pointerdown', e => {
+        const m = { x: e.clientX, y: e.clientY };
+        const w = getWorldPos(e);
+        state.lastMouse = m;
+
+        // 1. Сначала проверяем ресайз УЖЕ выбранного объекта
+        if (state.mode === 'move' && state.selectedObj && isHandleHit(state.selectedObj, w)) {
+            state.isResizing = true;
+            return;
+        }
+
+        // 2. Иначе ищем, куда попали
+        const hit = [...state.objects].reverse().find(o => w.x > o.x && w.x < o.x + o.w && w.y > o.y && w.y < o.y + o.h);
+
+        if (state.mode === 'move') {
+            if (hit) {
+                state.selectedObj = hit;
+                // Повторная проверка ресайза (если нажали на угол невыбранного объекта)
+                if (isHandleHit(hit, w)) {
+                    state.isResizing = true;
+                } else {
+                    state.isMovingObj = true;
+                    if(hit.type === 'video' && hit.el) {
+                        hit.el.paused ? hit.el.play() : hit.el.pause();
+                        render();
+                    }
+                }
+            } else {
+                state.isDragging = true; 
+                state.selectedObj = null;
+            }
+        } 
+        else if (state.mode === 'draw') {
+            state.isDrawing = true;
+            state.lines.push({ points: [w], color: state.theme==='light'?'#000':'#fff' });
+        }
+        else if (state.mode === 'eraser') {
+            state.isDrawing = true; 
+        }
+        render();
     });
 
     window.addEventListener('pointerup', () => { 
@@ -229,20 +254,21 @@
         render();
     }, { passive: false });
 
-    // --- DATA & SYNC ---
+    // --- SYNC & FILES ---
     function syncObjects(data) {
-        // Simple and robust syncing: reuse elements if URL matches
         state.objects = data.map(serverObj => {
             const existing = state.objects.find(o => o.url === serverObj.url);
             if (existing) {
-                return { ...serverObj, el: existing.el }; // Keep loaded element
+                return { ...serverObj, el: existing.el }; 
             } else {
                 let el = null;
                 if (serverObj.type === 'image') { el = new Image(); el.src = serverObj.url; el.onload = render; }
                 if (serverObj.type === 'video') { 
                     el = document.createElement('video'); el.src = serverObj.url; 
                     el.muted = true; el.loop = true; el.playsInline = true; el.crossOrigin = "anonymous";
-                    el.currentTime = 0.1; // Preview frame
+                    el.preload = "auto";
+                    el.onloadeddata = () => { el.currentTime = 0.5; }; // Ставим 0.5 сек для превью
+                    el.onseeked = () => { render(); }; // Рендерим, когда кадр готов
                 }
                 return { ...serverObj, el };
             }
@@ -251,14 +277,12 @@
     }
 
     async function saveHistoryAndSync() {
-        // History
         const snapshot = JSON.stringify({ objects: state.objects.map(({el, ...rest}) => rest), lines: state.lines });
         if (historyStep === -1 || history[historyStep] !== snapshot) {
             history = history.slice(0, historyStep + 1);
             history.push(snapshot);
             historyStep++;
         }
-        // Firebase
         if (!currentBoardId) return;
         const status = document.getElementById('status-dot');
         status.style.background = 'orange';
@@ -267,7 +291,6 @@
         status.style.background = '#4CAF50';
     }
 
-    // --- FILE UPLOAD ---
     window.handleFile = async (e) => {
         const file = e.target.files[0]; if (!file) return;
         const status = document.getElementById('status-dot'); status.style.background = 'blue';
@@ -284,47 +307,37 @@
                      saveHistoryAndSync(); render();
                 };
             } else {
-                const vid = document.createElement('video'); vid.src = data.secure_url; vid.muted = true; vid.loop = true;
+                const vid = document.createElement('video'); vid.src = data.secure_url; vid.muted = true; vid.loop = true; vid.crossOrigin = "anonymous"; vid.preload = "auto";
                 vid.onloadedmetadata = () => {
-                    vid.currentTime = 0.1; // Set preview
+                    vid.currentTime = 0.5; // Preview
                     const r = vid.videoWidth/vid.videoHeight;
                     state.objects.push({ type: 'video', x: pos.x, y: pos.y, w: 320, h: 320/r, url: data.secure_url, ratio: r, el: vid });
-                    saveHistoryAndSync(); render();
+                    // Дополнительный рендер после поиска
+                    vid.onseeked = () => { saveHistoryAndSync(); render(); };
                 };
             }
         } catch(e) { alert("Ошибка загрузки"); status.style.background = 'red'; }
     };
 
-    // --- BOARD MANAGER ---
+    // --- AUTH & BOARD ---
     async function openBoard(id) {
         if (unsubscribeBoard) unsubscribeBoard();
-        
-        // Critical: Clean slate before loading
-        state.objects = []; 
-        state.lines = []; 
-        history = []; historyStep = -1;
-        currentBoardId = id;
-        render();
-
+        state.objects = []; state.lines = []; history = []; historyStep = -1; currentBoardId = id; render();
         unsubscribeBoard = onSnapshot(doc(db, "boards", id), d => {
             if (d.exists() && !state.isMovingObj && !state.isResizing && !state.isDrawing) {
                 state.lines = d.data().lines || [];
                 syncObjects(d.data().objects || []);
             }
         });
-        loadBoardsList();
-        document.getElementById('sidebar').classList.remove('open');
+        loadBoardsList(); document.getElementById('sidebar').classList.remove('open');
     }
 
     async function loadBoardsList() {
         const snap = await getDocs(query(collection(db, "boards"), where("ownerId", "==", currentUser.uid)));
         const list = document.getElementById('boards-list'); list.innerHTML = '';
         snap.forEach(d => {
-            const div = document.createElement('div');
-            div.className = `board-item ${currentBoardId===d.id?'active':''}`;
-            div.innerHTML = `<span>${d.data().name}</span>`;
-            div.onclick = () => openBoard(d.id);
-            list.appendChild(div);
+            const div = document.createElement('div'); div.className = `board-item ${currentBoardId===d.id?'active':''}`;
+            div.innerHTML = `<span>${d.data().name}</span>`; div.onclick = () => openBoard(d.id); list.appendChild(div);
         });
     }
 
