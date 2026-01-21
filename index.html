@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Infinite Board v6.0</title>
+    <title>Infinite Board v6.1</title>
     <style>
         :root {
             --bg: #f4f4f9;
@@ -79,6 +79,32 @@
             background: var(--accent);
             color: white;
             box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+        }
+
+        .draw-controls {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            padding: 0 5px;
+        }
+
+        .draw-controls input[type="color"] {
+            width: 35px;
+            height: 35px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            padding: 0;
+        }
+
+        .draw-controls input[type="range"] {
+            width: 100px;
+        }
+
+        .brush-btn {
+            font-size: 14px;
+            padding: 5px 10px;
+            min-width: 70px;
         }
 
         #sidebar {
@@ -222,7 +248,7 @@
 <body class="mode-move">
 
     <div id="login-screen">
-        <h1 style="color:var(--text); margin-bottom: 20px;">Infinite Board v6.0</h1>
+        <h1 style="color:var(--text); margin-bottom: 20px;">Infinite Board v6.1</h1>
         <button class="login-btn" onclick="login()">Войти через Google</button>
     </div>
 
@@ -235,10 +261,20 @@
             <button id="mode-text" onclick="setMode('text')" title="Текст">📝</button>
             <button id="mode-eraser" onclick="setMode('eraser')" title="Ластик">🧽</button>
             <div style="width: 1px; height: 20px; background: #ddd; margin: 0 5px;"></div>
+            <!-- Drawing Controls -->
+            <div class="draw-controls" id="draw-controls" style="display: none;">
+                <input type="color" id="draw-color" value="#000000" title="Цвет">
+                <input type="range" id="draw-width" min="1" max="20" value="3" title="Толщина">
+                <button class="brush-btn" id="brush-pencil" onclick="setBrush('pencil')"
+                    title="Карандаш">Карандаш</button>
+                <button class="brush-btn" id="brush-paint" onclick="setBrush('paint')" title="Краска">Краска</button>
+                <button class="brush-btn" id="brush-marker" onclick="setBrush('marker')" title="Маркер">Маркер</button>
+            </div>
+            <div style="width: 1px; height: 20px; background: #ddd; margin: 0 5px;"></div>
             <button onclick="resetCamera()" title="Центр">🎯</button>
             <input type="file" id="file-input" hidden onchange="handleFile(event)">
             <button onclick="document.getElementById('file-input').click()" title="Загрузить фото/видео">🖼️</button>
-            <button onclick="deleteSelected()" title="Удалить">🗑️</button>
+            <button onclick="deleteSelected()" title="Удалить объект">🗑️</button>
         </div>
         <div class="panel" style="margin-top: 0; transform: scale(0.9);">
             <button onclick="undo()">↩️</button>
@@ -306,7 +342,10 @@
             lines: [],
             selectedObj: null,
             pointers: new Map(), // Для мультитача
-            prevDiff: -1         // Для зума пальцами
+            prevDiff: -1,        // Для зума пальцами
+            drawColor: '#000000',
+            drawWidth: 3,
+            brushType: 'paint'
         };
         let currentUser = null, currentBoardId = null, unsubscribeBoard = null;
         let history = [], historyStep = -1;
@@ -370,9 +409,28 @@
 
             // 3. Lines
             state.lines.forEach(l => {
-                ctx.beginPath(); ctx.strokeStyle = l.color; ctx.lineWidth = 3 / state.camera.zoom; ctx.lineCap = 'round';
+                ctx.save();
+                ctx.beginPath();
+                ctx.strokeStyle = l.color;
+                ctx.lineWidth = (l.width || 3) / state.camera.zoom;
+
+                // Apply brush-specific styles
+                const brushType = l.brushType || 'paint';
+                if (brushType === 'pencil') {
+                    ctx.lineCap = 'butt';
+                    ctx.lineJoin = 'miter';
+                } else if (brushType === 'paint') {
+                    ctx.lineCap = 'round';
+                    ctx.lineJoin = 'round';
+                } else if (brushType === 'marker') {
+                    ctx.lineCap = 'square';
+                    ctx.lineJoin = 'bevel';
+                    ctx.globalAlpha = 0.7;
+                }
+
                 l.points.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y));
                 ctx.stroke();
+                ctx.restore();
             });
             ctx.restore();
 
@@ -461,8 +519,48 @@
                     state.camera.y += m.y - state.lastMouse.y;
                 }
             } else if (state.isDrawing) {
-                if (state.mode === 'draw') state.lines[state.lines.length - 1].points.push(w);
-                else if (state.mode === 'eraser') state.lines = state.lines.filter(l => !l.points.some(p => Math.hypot(p.x - w.x, p.y - w.y) < 20 / state.camera.zoom));
+                if (state.mode === 'draw') {
+                    state.lines[state.lines.length - 1].points.push(w);
+                } else if (state.mode === 'eraser') {
+                    // Improved eraser: remove line segments instead of entire lines
+                    const eraserRadius = 20 / state.camera.zoom;
+                    const newLines = [];
+
+                    state.lines.forEach(line => {
+                        const segments = [];
+                        let currentSegment = [];
+
+                        line.points.forEach(p => {
+                            const dist = Math.hypot(p.x - w.x, p.y - w.y);
+                            if (dist > eraserRadius) {
+                                currentSegment.push(p);
+                            } else {
+                                if (currentSegment.length > 1) {
+                                    segments.push(currentSegment);
+                                }
+                                currentSegment = [];
+                            }
+                        });
+
+                        if (currentSegment.length > 1) {
+                            segments.push(currentSegment);
+                        }
+
+                        // Create new line objects for each segment
+                        segments.forEach(seg => {
+                            if (seg.length > 1) {
+                                newLines.push({
+                                    points: seg,
+                                    color: line.color,
+                                    width: line.width,
+                                    brushType: line.brushType
+                                });
+                            }
+                        });
+                    });
+
+                    state.lines = newLines;
+                }
             }
 
             state.lastMouse = m; render();
@@ -526,7 +624,12 @@
             }
             else if (state.mode === 'draw') {
                 state.isDrawing = true;
-                state.lines.push({ points: [w], color: state.theme === 'light' ? '#000' : '#fff' });
+                state.lines.push({
+                    points: [w],
+                    color: state.drawColor,
+                    width: state.drawWidth,
+                    brushType: state.brushType
+                });
             }
             else if (state.mode === 'eraser') {
                 state.isDrawing = true;
@@ -668,7 +771,35 @@
 
         window.login = () => signInWithPopup(auth, new GoogleAuthProvider());
         window.logout = () => signOut(auth).then(() => location.reload());
-        window.setMode = m => { state.mode = m; document.querySelectorAll('.panel button').forEach(b => b.classList.toggle('active', b.id === 'mode-' + m)); state.selectedObj = null; render(); };
+        window.setMode = m => {
+            state.mode = m;
+            document.querySelectorAll('.panel button').forEach(b => b.classList.toggle('active', b.id === 'mode-' + m));
+            state.selectedObj = null;
+
+            // Show/hide drawing controls
+            const drawControls = document.getElementById('draw-controls');
+            if (m === 'draw') {
+                drawControls.style.display = 'flex';
+                // Set initial color based on theme
+                if (!state.drawColor || state.drawColor === (state.theme === 'light' ? '#000000' : '#ffffff')) {
+                    state.drawColor = state.theme === 'light' ? '#000000' : '#ffffff';
+                    document.getElementById('draw-color').value = state.drawColor;
+                }
+                // Set active brush button
+                setBrush(state.brushType, true);
+            } else {
+                drawControls.style.display = 'none';
+            }
+
+            render();
+        };
+
+        window.setBrush = (type, skipUpdate = false) => {
+            state.brushType = type;
+            document.querySelectorAll('.brush-btn').forEach(b => b.classList.remove('active'));
+            document.getElementById('brush-' + type).classList.add('active');
+            if (!skipUpdate) render();
+        };
         window.createNewBoard = async (auto) => {
             const name = auto ? "My First Board" : prompt("Название:"); if (!name) return;
             const ref = await addDoc(collection(db, "boards"), { name, ownerId: currentUser.uid, objects: [], lines: [] });
@@ -793,6 +924,15 @@
             if (hit) {
                 openTextModal(null, hit);
             }
+        });
+
+        // Drawing controls event listeners
+        document.getElementById('draw-color').addEventListener('input', (e) => {
+            state.drawColor = e.target.value;
+        });
+
+        document.getElementById('draw-width').addEventListener('input', (e) => {
+            state.drawWidth = parseInt(e.target.value);
         });
     </script>
 </body>
