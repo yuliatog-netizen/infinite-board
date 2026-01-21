@@ -1,367 +1,548 @@
 <!DOCTYPE html>
 <html lang="ru">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Infinite Board v5.2</title>
     <style>
-        :root { --bg: #f4f4f9; --panel: #ffffff; --accent: #4285F4; --text: #333; }
-        [data-theme="dark"] { --bg: #1e1e1e; --panel: #2d2d2d; --accent: #64b5f6; --text: #eee; }
-        
-        body, html { margin: 0; padding: 0; height: 100%; overflow: hidden; background: var(--bg); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-        
-        #canvas { display: block; touch-action: none; cursor: default; }
-        
-        #ui-layer { position: fixed; top: 0; left: 0; width: 100%; pointer-events: none; z-index: 1000; display: flex; flex-direction: column; align-items: center; }
-        .panel { pointer-events: auto; background: var(--panel); padding: 8px 16px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.15); display: flex; gap: 8px; align-items: center; margin-top: 10px; }
-        
-        button { background: transparent; border: none; padding: 8px; border-radius: 8px; cursor: pointer; font-size: 20px; color: var(--text); transition: 0.2s; }
-        button:hover { background: rgba(0,0,0,0.05); }
-        button.active { background: var(--accent); color: white; box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
-        
-        #sidebar { position: fixed; top: 70px; left: 10px; width: 240px; background: var(--panel); border-radius: 12px; padding: 15px; pointer-events: auto; box-shadow: 0 10px 30px rgba(0,0,0,0.2); transform: translateX(-280px); transition: 0.3s; z-index: 1001; max-height: 80vh; overflow-y: auto; }
-        #sidebar.open { transform: translateX(0); }
-        
-        .board-item { padding: 12px; border-radius: 8px; cursor: pointer; margin-bottom: 4px; color: var(--text); display: flex; justify-content: space-between; }
-        .board-item:hover { background: rgba(0,0,0,0.03); }
-        .board-item.active { background: rgba(66, 133, 244, 0.1); border: 1px solid var(--accent); color: var(--accent); }
+        :root {
+            --bg: #f4f4f9;
+            --panel: #ffffff;
+            --accent: #4285F4;
+            --text: #333;
+        }
 
-        #login-screen { position: fixed; inset: 0; background: var(--bg); z-index: 5000; display: flex; justify-content: center; align-items: center; flex-direction: column; }
-        .login-btn { background: #4285F4; color: white; padding: 12px 24px; font-size: 16px; border-radius: 8px; font-weight: 500; }
-        #status-dot { width: 8px; height: 8px; border-radius: 50%; background: #ccc; margin-left: 10px; transition: 0.3s; }
+        [data-theme="dark"] {
+            --bg: #1e1e1e;
+            --panel: #2d2d2d;
+            --accent: #64b5f6;
+            --text: #eee;
+        }
+
+        body,
+        html {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            overflow: hidden;
+            background: var(--bg);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        }
+
+        #canvas {
+            display: block;
+            touch-action: none;
+            cursor: default;
+        }
+
+        #ui-layer {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            pointer-events: none;
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .panel {
+            pointer-events: auto;
+            background: var(--panel);
+            padding: 8px 16px;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            margin-top: 10px;
+        }
+
+        button {
+            background: transparent;
+            border: none;
+            padding: 8px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 20px;
+            color: var(--text);
+            transition: 0.2s;
+        }
+
+        button:hover {
+            background: rgba(0, 0, 0, 0.05);
+        }
+
+        button.active {
+            background: var(--accent);
+            color: white;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+        }
+
+        #sidebar {
+            position: fixed;
+            top: 70px;
+            left: 10px;
+            width: 240px;
+            background: var(--panel);
+            border-radius: 12px;
+            padding: 15px;
+            pointer-events: auto;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            transform: translateX(-280px);
+            transition: 0.3s;
+            z-index: 1001;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+
+        #sidebar.open {
+            transform: translateX(0);
+        }
+
+        .board-item {
+            padding: 12px;
+            border-radius: 8px;
+            cursor: pointer;
+            margin-bottom: 4px;
+            color: var(--text);
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .board-item:hover {
+            background: rgba(0, 0, 0, 0.03);
+        }
+
+        .board-item.active {
+            background: rgba(66, 133, 244, 0.1);
+            border: 1px solid var(--accent);
+            color: var(--accent);
+        }
+
+        #login-screen {
+            position: fixed;
+            inset: 0;
+            background: var(--bg);
+            z-index: 5000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+        }
+
+        .login-btn {
+            background: #4285F4;
+            color: white;
+            padding: 12px 24px;
+            font-size: 16px;
+            border-radius: 8px;
+            font-weight: 500;
+        }
+
+        #status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #ccc;
+            margin-left: 10px;
+            transition: 0.3s;
+        }
     </style>
 </head>
+
 <body class="mode-move">
 
-<div id="login-screen">
-    <h1 style="color:var(--text); margin-bottom: 20px;">Infinite Board v5.2</h1>
-    <button class="login-btn" onclick="login()">Войти через Google</button>
-</div>
-
-<div id="ui-layer" style="display:none;">
-    <div class="panel">
-        <button onclick="toggleSidebar()" title="Меню">☰</button>
-        <div style="width: 1px; height: 20px; background: #ddd; margin: 0 5px;"></div>
-        <button id="mode-move" class="active" onclick="setMode('move')" title="Рука (Двигать/Выбирать)">🖐️</button>
-        <button id="mode-draw" onclick="setMode('draw')" title="Карандаш">✏️</button>
-        <button id="mode-eraser" onclick="setMode('eraser')" title="Ластик">🧽</button>
-        <div style="width: 1px; height: 20px; background: #ddd; margin: 0 5px;"></div>
-        <button onclick="resetCamera()" title="Центр">🎯</button>
-        <input type="file" id="file-input" hidden onchange="handleFile(event)">
-        <button onclick="document.getElementById('file-input').click()" title="Загрузить фото/видео">🖼️</button>
-        <button onclick="deleteSelected()" title="Удалить">🗑️</button>
+    <div id="login-screen">
+        <h1 style="color:var(--text); margin-bottom: 20px;">Infinite Board v5.2</h1>
+        <button class="login-btn" onclick="login()">Войти через Google</button>
     </div>
-    <div class="panel" style="margin-top: 0; transform: scale(0.9);">
-        <button onclick="undo()">↩️</button>
-        <button onclick="redo()">↪️</button>
-        <button onclick="toggleTheme()">🌓</button>
-        <div id="status-dot"></div>
+
+    <div id="ui-layer" style="display:none;">
+        <div class="panel">
+            <button onclick="toggleSidebar()" title="Меню">☰</button>
+            <div style="width: 1px; height: 20px; background: #ddd; margin: 0 5px;"></div>
+            <button id="mode-move" class="active" onclick="setMode('move')" title="Рука (Двигать/Выбирать)">🖐️</button>
+            <button id="mode-draw" onclick="setMode('draw')" title="Карандаш">✏️</button>
+            <button id="mode-eraser" onclick="setMode('eraser')" title="Ластик">🧽</button>
+            <div style="width: 1px; height: 20px; background: #ddd; margin: 0 5px;"></div>
+            <button onclick="resetCamera()" title="Центр">🎯</button>
+            <input type="file" id="file-input" hidden onchange="handleFile(event)">
+            <button onclick="document.getElementById('file-input').click()" title="Загрузить фото/видео">🖼️</button>
+            <button onclick="deleteSelected()" title="Удалить">🗑️</button>
+        </div>
+        <div class="panel" style="margin-top: 0; transform: scale(0.9);">
+            <button onclick="undo()">↩️</button>
+            <button onclick="redo()">↪️</button>
+            <button onclick="toggleTheme()">🌓</button>
+            <div id="status-dot"></div>
+        </div>
     </div>
-</div>
 
-<div id="sidebar">
-    <h3 style="margin-top:0; color: var(--text);">Мои Доски</h3>
-    <div id="boards-list"></div>
-    <button onclick="createNewBoard()" style="width:100%; background:var(--accent); color:white; margin-top:15px; padding: 10px;">+ Новая доска</button>
-    <button onclick="logout()" style="width:100%; margin-top:10px; opacity: 0.6; font-size: 14px;">Выход</button>
-</div>
+    <div id="sidebar">
+        <h3 style="margin-top:0; color: var(--text);">Мои Доски</h3>
+        <div id="boards-list"></div>
+        <button onclick="createNewBoard()"
+            style="width:100%; background:var(--accent); color:white; margin-top:15px; padding: 10px;">+ Новая
+            доска</button>
+        <button onclick="logout()" style="width:100%; margin-top:10px; opacity: 0.6; font-size: 14px;">Выход</button>
+    </div>
 
-<canvas id="canvas"></canvas>
+    <canvas id="canvas"></canvas>
 
-<script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-    import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
-    import { getFirestore, doc, onSnapshot, updateDoc, collection, addDoc, query, where, getDocs } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+        import { getFirestore, doc, onSnapshot, updateDoc, collection, addDoc, query, where, getDocs } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
-    const CLOUDINARY_NAME = "dacvtrygp"; 
-    const CLOUDINARY_PRESET = "ml_default"; 
+        const CLOUDINARY_NAME = "dacvtrygp";
+        const CLOUDINARY_PRESET = "ml_default";
 
-    const app = initializeApp({
-        apiKey: "AIzaSyAYZY3gBo7uT-MSmgXnsZn3Y_q2zzU4OAM",
-        authDomain: "infiniteboard-3197d.firebaseapp.com",
-        projectId: "infiniteboard-3197d",
-        storageBucket: "infiniteboard-3197d.firebasestorage.app",
-        appId: "1:786069509066:web:ab900d2d7c952195067533"
-    });
-    const auth = getAuth(app), db = getFirestore(app);
-
-    let state = { mode: 'move', theme: 'light', camera: { x: window.innerWidth/2, y: window.innerHeight/2, zoom: 1 }, objects: [], lines: [], selectedObj: null };
-    let currentUser = null, currentBoardId = null, unsubscribeBoard = null;
-    let history = [], historyStep = -1;
-
-    // --- CANVAS & RENDER ---
-    const canvas = document.getElementById('canvas'), ctx = canvas.getContext('2d');
-    function resize() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; render(); }
-    window.addEventListener('resize', resize);
-    resize();
-
-    function render() {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        
-        // 1. Grid
-        const g = 50 * state.camera.zoom;
-        const offX = state.camera.x % g;
-        const offY = state.camera.y % g;
-        ctx.beginPath(); ctx.strokeStyle = state.theme === 'light' ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.08)'; ctx.lineWidth = 1;
-        for (let x = offX; x < canvas.width; x += g) { ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); }
-        for (let y = offY; y < canvas.height; y += g) { ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); }
-        ctx.stroke();
-
-        ctx.save();
-        ctx.translate(state.camera.x, state.camera.y);
-        ctx.scale(state.camera.zoom, state.camera.zoom);
-
-        // 2. Objects
-        state.objects.forEach(obj => {
-            if (obj.el) {
-                try { ctx.drawImage(obj.el, obj.x, obj.y, obj.w, obj.h); } catch(e){}
-                // Video Play Icon
-                if (obj.type === 'video' && obj.el.paused) {
-                    const cx = obj.x + obj.w/2, cy = obj.y + obj.h/2, r = Math.min(obj.w, obj.h)*0.15;
-                    ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.beginPath(); ctx.arc(cx, cy, r, 0, 7); ctx.fill();
-                    ctx.fillStyle = 'white'; ctx.beginPath(); ctx.moveTo(cx-r*0.2, cy-r*0.4); ctx.lineTo(cx+r*0.5, cy); ctx.lineTo(cx-r*0.2, cy+r*0.4); ctx.fill();
-                }
-            }
-            // Selection Frame
-            if (state.selectedObj === obj) {
-                ctx.strokeStyle = '#4285F4'; ctx.lineWidth = 2/state.camera.zoom;
-                ctx.strokeRect(obj.x, obj.y, obj.w, obj.h);
-                // Resize Handle
-                ctx.fillStyle = '#4285F4';
-                const s = 14 / state.camera.zoom;
-                ctx.fillRect(obj.x + obj.w - s/2, obj.y + obj.h - s/2, s, s);
-            }
+        const app = initializeApp({
+            apiKey: "AIzaSyAYZY3gBo7uT-MSmgXnsZn3Y_q2zzU4OAM",
+            authDomain: "infiniteboard-3197d.firebaseapp.com",
+            projectId: "infiniteboard-3197d",
+            storageBucket: "infiniteboard-3197d.firebasestorage.app",
+            appId: "1:786069509066:web:ab900d2d7c952195067533"
         });
+        const auth = getAuth(app), db = getFirestore(app);
 
-        // 3. Lines
-        state.lines.forEach(l => {
-            ctx.beginPath(); ctx.strokeStyle = l.color; ctx.lineWidth = 3/state.camera.zoom; ctx.lineCap = 'round';
-            l.points.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y));
+        let state = {
+            mode: 'move',
+            theme: 'light',
+            camera: { x: window.innerWidth / 2, y: window.innerHeight / 2, zoom: 1 },
+            objects: [],
+            lines: [],
+            selectedObj: null,
+            pointers: new Map(), // Для мультитача
+            prevDiff: -1         // Для зума пальцами
+        };
+        let currentUser = null, currentBoardId = null, unsubscribeBoard = null;
+        let history = [], historyStep = -1;
+
+        // --- CANVAS & RENDER ---
+        const canvas = document.getElementById('canvas'), ctx = canvas.getContext('2d');
+        function resize() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; render(); }
+        window.addEventListener('resize', resize);
+        resize();
+
+        function render() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // 1. Grid
+            const g = 50 * state.camera.zoom;
+            const offX = state.camera.x % g;
+            const offY = state.camera.y % g;
+            ctx.beginPath(); ctx.strokeStyle = state.theme === 'light' ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.08)'; ctx.lineWidth = 1;
+            for (let x = offX; x < canvas.width; x += g) { ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); }
+            for (let y = offY; y < canvas.height; y += g) { ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); }
             ctx.stroke();
-        });
-        ctx.restore();
 
-        // Loop for video updates
-        if (state.objects.some(o => o.type === 'video' && o.el && !o.el.paused)) requestAnimationFrame(render);
-    }
+            ctx.save();
+            ctx.translate(state.camera.x, state.camera.y);
+            ctx.scale(state.camera.zoom, state.camera.zoom);
 
-    // --- INTERACTION ---
-    function getWorldPos(e) { return { x: (e.clientX - state.camera.x)/state.camera.zoom, y: (e.clientY - state.camera.y)/state.camera.zoom }; }
-    
-    // Check if clicking resize handle
-    function isHandleHit(obj, w) {
-        if (!obj) return false;
-        const s = 40 / state.camera.zoom; // Большой хитбокс для удобства
-        return (w.x > obj.x + obj.w - s && w.y > obj.y + obj.h - s);
-    }
-
-    canvas.addEventListener('pointermove', e => {
-        if (!state.lastMouse) {
-            // Logic for cursor change on hover
-            const w = getWorldPos(e);
-            const hoverObj = [...state.objects].reverse().find(o => w.x > o.x && w.x < o.x + o.w && w.y > o.y && w.y < o.y + o.h);
-            
-            if (state.selectedObj && isHandleHit(state.selectedObj, w) && state.mode === 'move') {
-                canvas.style.cursor = 'nwse-resize';
-            } else if (state.mode === 'move') {
-                canvas.style.cursor = hoverObj ? 'move' : 'default';
-            } else {
-                canvas.style.cursor = 'crosshair';
-            }
-            return;
-        }
-
-        // Dragging Logic
-        const m = { x: e.clientX, y: e.clientY };
-        const dx = (m.x - state.lastMouse.x)/state.camera.zoom;
-        const dy = (m.y - state.lastMouse.y)/state.camera.zoom;
-        const w = getWorldPos(e);
-
-        if (state.mode === 'move') {
-            if (state.isResizing && state.selectedObj) {
-                state.selectedObj.w += dx; 
-                state.selectedObj.h = state.selectedObj.w / (state.selectedObj.ratio || 1.77);
-            } else if (state.isMovingObj && state.selectedObj) {
-                state.selectedObj.x += dx; state.selectedObj.y += dy;
-            } else if (state.isDragging) {
-                state.camera.x += m.x - state.lastMouse.x;
-                state.camera.y += m.y - state.lastMouse.y;
-            }
-        } else if (state.isDrawing) {
-            if (state.mode === 'draw') state.lines[state.lines.length-1].points.push(w);
-            else if (state.mode === 'eraser') state.lines = state.lines.filter(l => !l.points.some(p => Math.hypot(p.x-w.x, p.y-w.y)<20/state.camera.zoom));
-        }
-
-        state.lastMouse = m; render();
-    });
-
-    canvas.addEventListener('pointerdown', e => {
-        const m = { x: e.clientX, y: e.clientY };
-        const w = getWorldPos(e);
-        state.lastMouse = m;
-
-        // 1. Сначала проверяем ресайз УЖЕ выбранного объекта
-        if (state.mode === 'move' && state.selectedObj && isHandleHit(state.selectedObj, w)) {
-            state.isResizing = true;
-            return;
-        }
-
-        // 2. Иначе ищем, куда попали
-        const hit = [...state.objects].reverse().find(o => w.x > o.x && w.x < o.x + o.w && w.y > o.y && w.y < o.y + o.h);
-
-        if (state.mode === 'move') {
-            if (hit) {
-                state.selectedObj = hit;
-                // Повторная проверка ресайза (если нажали на угол невыбранного объекта)
-                if (isHandleHit(hit, w)) {
-                    state.isResizing = true;
-                } else {
-                    state.isMovingObj = true;
-                    if(hit.type === 'video' && hit.el) {
-                        hit.el.paused ? hit.el.play() : hit.el.pause();
-                        render();
+            // 2. Objects
+            state.objects.forEach(obj => {
+                if (obj.el) {
+                    try { ctx.drawImage(obj.el, obj.x, obj.y, obj.w, obj.h); } catch (e) { }
+                    // Video Play Icon
+                    if (obj.type === 'video' && obj.el.paused) {
+                        const cx = obj.x + obj.w / 2, cy = obj.y + obj.h / 2, r = Math.min(obj.w, obj.h) * 0.15;
+                        ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.beginPath(); ctx.arc(cx, cy, r, 0, 7); ctx.fill();
+                        ctx.fillStyle = 'white'; ctx.beginPath(); ctx.moveTo(cx - r * 0.2, cy - r * 0.4); ctx.lineTo(cx + r * 0.5, cy); ctx.lineTo(cx - r * 0.2, cy + r * 0.4); ctx.fill();
                     }
                 }
-            } else {
-                state.isDragging = true; 
-                state.selectedObj = null;
-            }
-        } 
-        else if (state.mode === 'draw') {
-            state.isDrawing = true;
-            state.lines.push({ points: [w], color: state.theme==='light'?'#000':'#fff' });
-        }
-        else if (state.mode === 'eraser') {
-            state.isDrawing = true; 
-        }
-        render();
-    });
-
-    window.addEventListener('pointerup', () => { 
-        if(state.isMovingObj || state.isResizing || state.isDrawing) saveHistoryAndSync();
-        state.isDragging = state.isMovingObj = state.isResizing = state.isDrawing = false; 
-        state.lastMouse = null; 
-    });
-
-    canvas.addEventListener('wheel', e => {
-        e.preventDefault();
-        const d = e.deltaY > 0 ? 0.9 : 1.1;
-        const wX = (e.clientX - state.camera.x) / state.camera.zoom;
-        const wY = (e.clientY - state.camera.y) / state.camera.zoom;
-        state.camera.zoom = Math.min(Math.max(state.camera.zoom * d, 0.05), 5);
-        state.camera.x = e.clientX - wX * state.camera.zoom;
-        state.camera.y = e.clientY - wY * state.camera.zoom;
-        render();
-    }, { passive: false });
-
-    // --- SYNC & FILES ---
-    function syncObjects(data) {
-        state.objects = data.map(serverObj => {
-            const existing = state.objects.find(o => o.url === serverObj.url);
-            if (existing) {
-                return { ...serverObj, el: existing.el }; 
-            } else {
-                let el = null;
-                if (serverObj.type === 'image') { el = new Image(); el.src = serverObj.url; el.onload = render; }
-                if (serverObj.type === 'video') { 
-                    el = document.createElement('video'); el.src = serverObj.url; 
-                    el.muted = true; el.loop = true; el.playsInline = true; el.crossOrigin = "anonymous";
-                    el.preload = "auto";
-                    el.onloadeddata = () => { el.currentTime = 0.5; }; // Ставим 0.5 сек для превью
-                    el.onseeked = () => { render(); }; // Рендерим, когда кадр готов
+                // Selection Frame
+                if (state.selectedObj === obj) {
+                    ctx.strokeStyle = '#4285F4'; ctx.lineWidth = 2 / state.camera.zoom;
+                    ctx.strokeRect(obj.x, obj.y, obj.w, obj.h);
+                    // Resize Handle
+                    ctx.fillStyle = '#4285F4';
+                    const s = 14 / state.camera.zoom;
+                    ctx.fillRect(obj.x + obj.w - s / 2, obj.y + obj.h - s / 2, s, s);
                 }
-                return { ...serverObj, el };
-            }
-        });
-        render();
-    }
+            });
 
-    async function saveHistoryAndSync() {
-        const snapshot = JSON.stringify({ objects: state.objects.map(({el, ...rest}) => rest), lines: state.lines });
-        if (historyStep === -1 || history[historyStep] !== snapshot) {
-            history = history.slice(0, historyStep + 1);
-            history.push(snapshot);
-            historyStep++;
+            // 3. Lines
+            state.lines.forEach(l => {
+                ctx.beginPath(); ctx.strokeStyle = l.color; ctx.lineWidth = 3 / state.camera.zoom; ctx.lineCap = 'round';
+                l.points.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y));
+                ctx.stroke();
+            });
+            ctx.restore();
+
+            // Loop for video updates
+            if (state.objects.some(o => o.type === 'video' && o.el && !o.el.paused)) requestAnimationFrame(render);
         }
-        if (!currentBoardId) return;
-        const status = document.getElementById('status-dot');
-        status.style.background = 'orange';
-        const cleanObjects = state.objects.map(({el, ...o}) => o);
-        await updateDoc(doc(db, "boards", currentBoardId), { objects: cleanObjects, lines: state.lines });
-        status.style.background = '#4CAF50';
-    }
 
-    window.handleFile = async (e) => {
-        const file = e.target.files[0]; if (!file) return;
-        const status = document.getElementById('status-dot'); status.style.background = 'blue';
-        const formData = new FormData(); formData.append('file', file); formData.append('upload_preset', CLOUDINARY_PRESET);
-        try {
-            const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_NAME}/auto/upload`, { method: 'POST', body: formData });
-            const data = await res.json();
-            const pos = getWorldPos({clientX: window.innerWidth/2, clientY: window.innerHeight/2});
-            
-            if (file.type.startsWith('image')) {
-                const img = new Image(); img.src = data.secure_url;
-                img.onload = () => {
-                     state.objects.push({ type: 'image', x: pos.x, y: pos.y, w: img.width/2, h: img.height/2, url: data.secure_url, ratio: img.width/img.height, el: img });
-                     saveHistoryAndSync(); render();
-                };
-            } else {
-                const vid = document.createElement('video'); vid.src = data.secure_url; vid.muted = true; vid.loop = true; vid.crossOrigin = "anonymous"; vid.preload = "auto";
-                vid.onloadedmetadata = () => {
-                    vid.currentTime = 0.5; // Preview
-                    const r = vid.videoWidth/vid.videoHeight;
-                    state.objects.push({ type: 'video', x: pos.x, y: pos.y, w: 320, h: 320/r, url: data.secure_url, ratio: r, el: vid });
-                    // Дополнительный рендер после поиска
-                    vid.onseeked = () => { saveHistoryAndSync(); render(); };
-                };
-            }
-        } catch(e) { alert("Ошибка загрузки"); status.style.background = 'red'; }
-    };
+        // --- INTERACTION ---
+        function getWorldPos(e) { return { x: (e.clientX - state.camera.x) / state.camera.zoom, y: (e.clientY - state.camera.y) / state.camera.zoom }; }
 
-    // --- AUTH & BOARD ---
-    async function openBoard(id) {
-        if (unsubscribeBoard) unsubscribeBoard();
-        state.objects = []; state.lines = []; history = []; historyStep = -1; currentBoardId = id; render();
-        unsubscribeBoard = onSnapshot(doc(db, "boards", id), d => {
-            if (d.exists() && !state.isMovingObj && !state.isResizing && !state.isDrawing) {
-                state.lines = d.data().lines || [];
-                syncObjects(d.data().objects || []);
-            }
-        });
-        loadBoardsList(); document.getElementById('sidebar').classList.remove('open');
-    }
-
-    async function loadBoardsList() {
-        const snap = await getDocs(query(collection(db, "boards"), where("ownerId", "==", currentUser.uid)));
-        const list = document.getElementById('boards-list'); list.innerHTML = '';
-        snap.forEach(d => {
-            const div = document.createElement('div'); div.className = `board-item ${currentBoardId===d.id?'active':''}`;
-            div.innerHTML = `<span>${d.data().name}</span>`; div.onclick = () => openBoard(d.id); list.appendChild(div);
-        });
-    }
-
-    onAuthStateChanged(auth, user => {
-        if (user) {
-            currentUser = user; document.getElementById('login-screen').style.display='none'; document.getElementById('ui-layer').style.display='flex';
-            loadBoardsList().then(() => { if (!currentBoardId) getDocs(query(collection(db, "boards"), where("ownerId", "==", user.uid))).then(s => { if(!s.empty) openBoard(s.docs[0].id); else createNewBoard(true); }); });
+        // Check if clicking resize handle
+        function isHandleHit(obj, w) {
+            if (!obj) return false;
+            const s = 40 / state.camera.zoom; // Большой хитбокс для удобства
+            return (w.x > obj.x + obj.w - s && w.y > obj.y + obj.h - s);
         }
-    });
 
-    window.login = () => signInWithPopup(auth, new GoogleAuthProvider());
-    window.logout = () => signOut(auth).then(() => location.reload());
-    window.setMode = m => { state.mode = m; document.querySelectorAll('.panel button').forEach(b => b.classList.toggle('active', b.id === 'mode-'+m)); state.selectedObj = null; render(); };
-    window.createNewBoard = async (auto) => {
-        const name = auto ? "My First Board" : prompt("Название:"); if(!name) return;
-        const ref = await addDoc(collection(db, "boards"), { name, ownerId: currentUser.uid, objects: [], lines: [] });
-        openBoard(ref.id);
-    };
-    window.toggleSidebar = () => document.getElementById('sidebar').classList.toggle('open');
-    window.resetCamera = () => { state.camera = { x: window.innerWidth/2, y: window.innerHeight/2, zoom: 1 }; render(); };
-    window.deleteSelected = () => { if(state.selectedObj){ state.objects = state.objects.filter(o => o !== state.selectedObj); state.selectedObj = null; saveHistoryAndSync(); render(); } };
-    window.undo = () => { if(historyStep > 0) { historyStep--; const d = JSON.parse(history[historyStep]); state.lines=d.lines; syncObjects(d.objects); saveHistoryAndSync(); } };
-    window.redo = () => { if(historyStep < history.length - 1) { historyStep++; const d = JSON.parse(history[historyStep]); state.lines=d.lines; syncObjects(d.objects); saveHistoryAndSync(); } };
-    window.toggleTheme = () => { state.theme = state.theme==='light'?'dark':'light'; document.body.setAttribute('data-theme', state.theme); render(); };
-</script>
+        canvas.addEventListener('pointermove', e => {
+            state.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+            if (state.pointers.size === 2) {
+                // Мультитач логика (Pinch-to-Zoom & Pan)
+                const pts = Array.from(state.pointers.values());
+                const curDiff = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+                const centerX = (pts[0].x + pts[1].x) / 2;
+                const centerY = (pts[0].y + pts[1].y) / 2;
+
+                if (state.prevDiff > 0) {
+                    const d = curDiff / state.prevDiff;
+                    const wX = (centerX - state.camera.x) / state.camera.zoom;
+                    const wY = (centerY - state.camera.y) / state.camera.zoom;
+                    state.camera.zoom = Math.min(Math.max(state.camera.zoom * d, 0.05), 5);
+                    state.camera.x = centerX - wX * state.camera.zoom;
+                    state.camera.y = centerY - wY * state.camera.zoom;
+                }
+
+                // Pan при помощи двух пальцев
+                if (state.lastPinchCenter) {
+                    state.camera.x += centerX - state.lastPinchCenter.x;
+                    state.camera.y += centerY - state.lastPinchCenter.y;
+                }
+
+                state.prevDiff = curDiff;
+                state.lastPinchCenter = { x: centerX, y: centerY };
+                render();
+                return;
+            }
+
+            if (!state.lastMouse) {
+                const w = getWorldPos(e);
+                const hoverObj = [...state.objects].reverse().find(o => w.x > o.x && w.x < o.x + o.w && w.y > o.y && w.y < o.y + o.h);
+
+                if (state.selectedObj && isHandleHit(state.selectedObj, w) && state.mode === 'move') {
+                    canvas.style.cursor = 'nwse-resize';
+                } else if (state.mode === 'move') {
+                    canvas.style.cursor = hoverObj ? 'move' : 'default';
+                } else {
+                    canvas.style.cursor = 'crosshair';
+                }
+                return;
+            }
+
+            const m = { x: e.clientX, y: e.clientY };
+            const dx = (m.x - state.lastMouse.x) / state.camera.zoom;
+            const dy = (m.y - state.lastMouse.y) / state.camera.zoom;
+            const w = getWorldPos(e);
+
+            if (state.mode === 'move') {
+                if (state.isResizing && state.selectedObj) {
+                    state.selectedObj.w += dx;
+                    state.selectedObj.h = state.selectedObj.w / (state.selectedObj.ratio || 1.77);
+                } else if (state.isMovingObj && state.selectedObj) {
+                    state.selectedObj.x += dx; state.selectedObj.y += dy;
+                } else if (state.isDragging) {
+                    state.camera.x += m.x - state.lastMouse.x;
+                    state.camera.y += m.y - state.lastMouse.y;
+                }
+            } else if (state.isDrawing) {
+                if (state.mode === 'draw') state.lines[state.lines.length - 1].points.push(w);
+                else if (state.mode === 'eraser') state.lines = state.lines.filter(l => !l.points.some(p => Math.hypot(p.x - w.x, p.y - w.y) < 20 / state.camera.zoom));
+            }
+
+            state.lastMouse = m; render();
+        });
+
+        canvas.addEventListener('pointerdown', e => {
+            state.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+            if (state.pointers.size > 1) {
+                state.isDragging = state.isMovingObj = state.isResizing = state.isDrawing = false;
+                state.lastMouse = null;
+                if (state.pointers.size === 2) {
+                    const pts = Array.from(state.pointers.values());
+                    state.prevDiff = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+                    state.lastPinchCenter = { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 };
+                }
+                return;
+            }
+
+            const m = { x: e.clientX, y: e.clientY };
+            const w = getWorldPos(e);
+            state.lastMouse = m;
+
+            // 1. Сначала проверяем ресайз УЖЕ выбранного объекта
+            if (state.mode === 'move' && state.selectedObj && isHandleHit(state.selectedObj, w)) {
+                state.isResizing = true;
+                return;
+            }
+
+            // 2. Иначе ищем, куда попали
+            const hit = [...state.objects].reverse().find(o => w.x > o.x && w.x < o.x + o.w && w.y > o.y && w.y < o.y + o.h);
+
+            if (state.mode === 'move') {
+                if (hit) {
+                    state.selectedObj = hit;
+                    // Повторная проверка ресайза (если нажали на угол невыбранного объекта)
+                    if (isHandleHit(hit, w)) {
+                        state.isResizing = true;
+                    } else {
+                        state.isMovingObj = true;
+                        if (hit.type === 'video' && hit.el) {
+                            hit.el.paused ? hit.el.play() : hit.el.pause();
+                            render();
+                        }
+                    }
+                } else {
+                    state.isDragging = true;
+                    state.selectedObj = null;
+                }
+            }
+            else if (state.mode === 'draw') {
+                state.isDrawing = true;
+                state.lines.push({ points: [w], color: state.theme === 'light' ? '#000' : '#fff' });
+            }
+            else if (state.mode === 'eraser') {
+                state.isDrawing = true;
+            }
+            render();
+        });
+
+        const handlePointerUp = e => {
+            state.pointers.delete(e.pointerId);
+            if (state.pointers.size < 2) {
+                state.prevDiff = -1;
+                state.lastPinchCenter = null;
+            }
+            if (state.isMovingObj || state.isResizing || state.isDrawing) saveHistoryAndSync();
+            state.isDragging = state.isMovingObj = state.isResizing = state.isDrawing = false;
+            state.lastMouse = null;
+        };
+        window.addEventListener('pointerup', handlePointerUp);
+        window.addEventListener('pointercancel', handlePointerUp);
+
+        canvas.addEventListener('wheel', e => {
+            e.preventDefault();
+            const d = e.deltaY > 0 ? 0.9 : 1.1;
+            const wX = (e.clientX - state.camera.x) / state.camera.zoom;
+            const wY = (e.clientY - state.camera.y) / state.camera.zoom;
+            state.camera.zoom = Math.min(Math.max(state.camera.zoom * d, 0.05), 5);
+            state.camera.x = e.clientX - wX * state.camera.zoom;
+            state.camera.y = e.clientY - wY * state.camera.zoom;
+            render();
+        }, { passive: false });
+
+        // --- SYNC & FILES ---
+        function syncObjects(data) {
+            state.objects = data.map(serverObj => {
+                const existing = state.objects.find(o => o.url === serverObj.url);
+                if (existing) {
+                    return { ...serverObj, el: existing.el };
+                } else {
+                    let el = null;
+                    if (serverObj.type === 'image') { el = new Image(); el.src = serverObj.url; el.onload = render; }
+                    if (serverObj.type === 'video') {
+                        el = document.createElement('video'); el.src = serverObj.url;
+                        el.muted = true; el.loop = true; el.playsInline = true; el.crossOrigin = "anonymous";
+                        el.preload = "auto";
+                        el.onloadeddata = () => { el.currentTime = 0.5; }; // Ставим 0.5 сек для превью
+                        el.onseeked = () => { render(); }; // Рендерим, когда кадр готов
+                    }
+                    return { ...serverObj, el };
+                }
+            });
+            render();
+        }
+
+        async function saveHistoryAndSync() {
+            const snapshot = JSON.stringify({ objects: state.objects.map(({ el, ...rest }) => rest), lines: state.lines });
+            if (historyStep === -1 || history[historyStep] !== snapshot) {
+                history = history.slice(0, historyStep + 1);
+                history.push(snapshot);
+                historyStep++;
+            }
+            if (!currentBoardId) return;
+            const status = document.getElementById('status-dot');
+            status.style.background = 'orange';
+            const cleanObjects = state.objects.map(({ el, ...o }) => o);
+            await updateDoc(doc(db, "boards", currentBoardId), { objects: cleanObjects, lines: state.lines });
+            status.style.background = '#4CAF50';
+        }
+
+        window.handleFile = async (e) => {
+            const file = e.target.files[0]; if (!file) return;
+            const status = document.getElementById('status-dot'); status.style.background = 'blue';
+            const formData = new FormData(); formData.append('file', file); formData.append('upload_preset', CLOUDINARY_PRESET);
+            try {
+                const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_NAME}/auto/upload`, { method: 'POST', body: formData });
+                const data = await res.json();
+                const pos = getWorldPos({ clientX: window.innerWidth / 2, clientY: window.innerHeight / 2 });
+
+                if (file.type.startsWith('image')) {
+                    const img = new Image(); img.src = data.secure_url;
+                    img.onload = () => {
+                        state.objects.push({ type: 'image', x: pos.x, y: pos.y, w: img.width / 2, h: img.height / 2, url: data.secure_url, ratio: img.width / img.height, el: img });
+                        saveHistoryAndSync(); render();
+                    };
+                } else {
+                    const vid = document.createElement('video'); vid.src = data.secure_url; vid.muted = true; vid.loop = true; vid.crossOrigin = "anonymous"; vid.preload = "auto";
+                    vid.onloadedmetadata = () => {
+                        vid.currentTime = 0.5; // Preview
+                        const r = vid.videoWidth / vid.videoHeight;
+                        state.objects.push({ type: 'video', x: pos.x, y: pos.y, w: 320, h: 320 / r, url: data.secure_url, ratio: r, el: vid });
+                        // Дополнительный рендер после поиска
+                        vid.onseeked = () => { saveHistoryAndSync(); render(); };
+                    };
+                }
+            } catch (e) { alert("Ошибка загрузки"); status.style.background = 'red'; }
+        };
+
+        // --- AUTH & BOARD ---
+        async function openBoard(id) {
+            if (unsubscribeBoard) unsubscribeBoard();
+            state.objects = []; state.lines = []; history = []; historyStep = -1; currentBoardId = id; render();
+            unsubscribeBoard = onSnapshot(doc(db, "boards", id), d => {
+                if (d.exists() && !state.isMovingObj && !state.isResizing && !state.isDrawing) {
+                    state.lines = d.data().lines || [];
+                    syncObjects(d.data().objects || []);
+                }
+            });
+            loadBoardsList(); document.getElementById('sidebar').classList.remove('open');
+        }
+
+        async function loadBoardsList() {
+            const snap = await getDocs(query(collection(db, "boards"), where("ownerId", "==", currentUser.uid)));
+            const list = document.getElementById('boards-list'); list.innerHTML = '';
+            snap.forEach(d => {
+                const div = document.createElement('div'); div.className = `board-item ${currentBoardId === d.id ? 'active' : ''}`;
+                div.innerHTML = `<span>${d.data().name}</span>`; div.onclick = () => openBoard(d.id); list.appendChild(div);
+            });
+        }
+
+        onAuthStateChanged(auth, user => {
+            if (user) {
+                currentUser = user; document.getElementById('login-screen').style.display = 'none'; document.getElementById('ui-layer').style.display = 'flex';
+                loadBoardsList().then(() => { if (!currentBoardId) getDocs(query(collection(db, "boards"), where("ownerId", "==", user.uid))).then(s => { if (!s.empty) openBoard(s.docs[0].id); else createNewBoard(true); }); });
+            }
+        });
+
+        window.login = () => signInWithPopup(auth, new GoogleAuthProvider());
+        window.logout = () => signOut(auth).then(() => location.reload());
+        window.setMode = m => { state.mode = m; document.querySelectorAll('.panel button').forEach(b => b.classList.toggle('active', b.id === 'mode-' + m)); state.selectedObj = null; render(); };
+        window.createNewBoard = async (auto) => {
+            const name = auto ? "My First Board" : prompt("Название:"); if (!name) return;
+            const ref = await addDoc(collection(db, "boards"), { name, ownerId: currentUser.uid, objects: [], lines: [] });
+            openBoard(ref.id);
+        };
+        window.toggleSidebar = () => document.getElementById('sidebar').classList.toggle('open');
+        window.resetCamera = () => { state.camera = { x: window.innerWidth / 2, y: window.innerHeight / 2, zoom: 1 }; render(); };
+        window.deleteSelected = () => { if (state.selectedObj) { state.objects = state.objects.filter(o => o !== state.selectedObj); state.selectedObj = null; saveHistoryAndSync(); render(); } };
+        window.undo = () => { if (historyStep > 0) { historyStep--; const d = JSON.parse(history[historyStep]); state.lines = d.lines; syncObjects(d.objects); saveHistoryAndSync(); } };
+        window.redo = () => { if (historyStep < history.length - 1) { historyStep++; const d = JSON.parse(history[historyStep]); state.lines = d.lines; syncObjects(d.objects); saveHistoryAndSync(); } };
+        window.toggleTheme = () => { state.theme = state.theme === 'light' ? 'dark' : 'light'; document.body.setAttribute('data-theme', state.theme); render(); };
+    </script>
 </body>
+
 </html>
