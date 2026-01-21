@@ -3,25 +3,20 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Infinite Board v3.7</title>
+    <title>Infinite Board v3.8</title>
     <style>
         :root { --bg: #f0f0f0; --panel: #ffffff; --accent: #007bff; --text: #333; --grid: #e0e0e0; }
         [data-theme="dark"] { --bg: #1a1a1a; --panel: #333; --accent: #007bff; --text: #eee; --grid: #333; }
         body, html { margin: 0; padding: 0; height: 100%; overflow: hidden; background: var(--bg); font-family: sans-serif; }
-        
         #login-screen { position: fixed; inset: 0; background: var(--bg); z-index: 2000; display: flex; justify-content: center; align-items: center; flex-direction: column; }
         #ui-layer { position: fixed; top: 0; left: 0; width: 100%; pointer-events: none; z-index: 100; display: flex; flex-direction: column; align-items: center; }
         .panel { pointer-events: auto; background: var(--panel); padding: 5px 12px; border-radius: 30px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); display: flex; gap: 6px; align-items: center; margin: 8px; border: 1px solid rgba(0,0,0,0.1); }
-        
         #sidebar { position: fixed; top: 60px; left: 10px; width: 220px; background: var(--panel); border-radius: 15px; padding: 15px; pointer-events: auto; box-shadow: 0 4px 15px rgba(0,0,0,0.1); transform: translateX(-250px); transition: 0.3s; z-index: 101; max-height: 80vh; overflow-y: auto; }
         #sidebar.open { transform: translateX(0); }
-        
         .board-item { padding: 10px; border-radius: 8px; cursor: pointer; margin-bottom: 5px; color: var(--text); border: 1px solid transparent; }
         .board-item.active { border-color: var(--accent); background: rgba(0,123,255,0.1); }
-        
         button { background: #eee; border: none; padding: 8px 12px; border-radius: 15px; cursor: pointer; color: #333; font-weight: bold; pointer-events: auto; }
         button.active { background: var(--accent) !important; color: white !important; }
-        
         #canvas { display: block; touch-action: none; }
         .sync-indicator { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-left: 5px; }
     </style>
@@ -89,26 +84,14 @@
     let history = [], historyStep = -1;
     let touchStartDist = 0, touchStartZoom = 1;
 
-    // --- AUTH (GLOBAL) ---
-    window.login = async () => {
-        try { await signInWithPopup(auth, new GoogleAuthProvider()); } 
-        catch (e) { alert("Ошибка входа. Проверьте Authorized Domains в Firebase."); }
-    };
+    window.login = () => signInWithPopup(auth, new GoogleAuthProvider());
     window.logout = () => signOut(auth);
 
     onAuthStateChanged(auth, (user) => {
-        if (user) {
-            currentUser = user;
-            document.getElementById('login-screen').style.display = 'none';
-            document.getElementById('ui-layer').style.display = 'flex';
-            loadBoardsList();
-        } else {
-            document.getElementById('login-screen').style.display = 'flex';
-            document.getElementById('ui-layer').style.display = 'none';
-        }
+        if (user) { currentUser = user; document.getElementById('login-screen').style.display = 'none'; document.getElementById('ui-layer').style.display = 'flex'; loadBoardsList(); }
+        else { document.getElementById('login-screen').style.display = 'flex'; document.getElementById('ui-layer').style.display = 'none'; }
     });
 
-    // --- BOARDS ---
     async function loadBoardsList() {
         if(!currentUser) return;
         const q = query(collection(db, "boards"), where("ownerId", "==", currentUser.uid));
@@ -156,22 +139,14 @@
         render();
     }
 
-    // --- SYNC & HISTORY ---
     function saveToHistory() {
         historyStep++;
         history = history.slice(0, historyStep);
         history.push(JSON.stringify({ objects: state.objects.map(({el, ...o}) => o), lines: state.lines }));
     }
 
-    window.undo = () => { if (historyStep > 0) { historyStep--; applyHistory(); } };
-    window.redo = () => { if (historyStep < history.length - 1) { historyStep++; applyHistory(); } };
-
-    function applyHistory() {
-        const data = JSON.parse(history[historyStep]);
-        state.lines = data.lines;
-        updateObjects(data.objects);
-        triggerSave();
-    }
+    window.undo = () => { if (historyStep > 0) { historyStep--; const data = JSON.parse(history[historyStep]); state.lines = data.lines; updateObjects(data.objects); triggerSave(); } };
+    window.redo = () => { if (historyStep < history.length - 1) { historyStep++; const data = JSON.parse(history[historyStep]); state.lines = data.lines; updateObjects(data.objects); triggerSave(); } };
 
     let saveTimeout;
     function triggerSave() {
@@ -185,7 +160,6 @@
         }, 1000);
     }
 
-    // --- MEDIA ---
     window.handleFile = async (e) => {
         const file = e.target.files[0];
         if (!file) return;
@@ -198,20 +172,12 @@
             const data = await response.json();
             let url = data.secure_url.replace('/upload/', '/upload/f_auto,q_auto' + (file.type.startsWith('video') ? ',vc_auto/' : '/'));
             const pos = { x: (window.innerWidth/2 - state.camera.x)/state.camera.zoom, y: (window.innerHeight/2 - state.camera.y)/state.camera.zoom };
-
             if (file.type.startsWith('image')) {
                 const img = new Image(); img.src = url; img.crossOrigin = "anonymous";
-                img.onload = () => {
-                    state.objects.push({ type: 'image', x: pos.x, y: pos.y, w: img.width/2, h: img.height/2, url, ratio: img.width/img.height, el: img });
-                    saveToHistory(); render(); triggerSave();
-                };
+                img.onload = () => { state.objects.push({ type: 'image', x: pos.x, y: pos.y, w: img.width/2, h: img.height/2, url, ratio: img.width/img.height, el: img }); saveToHistory(); render(); triggerSave(); };
             } else {
-                const vid = document.createElement('video'); vid.src = url; vid.muted = true; vid.loop = true; vid.crossOrigin = "anonymous";
-                vid.onloadedmetadata = () => {
-                    const r = vid.videoWidth/vid.videoHeight;
-                    state.objects.push({ type: 'video', x: pos.x, y: pos.y, w: 320, h: 320/r, url, ratio: r, el: vid });
-                    saveToHistory(); render(); triggerSave();
-                };
+                const vid = document.createElement('video'); vid.src = url; vid.muted = true; vid.loop = true; vid.crossOrigin = "anonymous"; vid.playsInline = true;
+                vid.onloadedmetadata = () => { const r = vid.videoWidth/vid.videoHeight; state.objects.push({ type: 'video', x: pos.x, y: pos.y, w: 320, h: 320/r, url, ratio: r, el: vid }); saveToHistory(); render(); triggerSave(); };
             }
         } catch (err) { alert("Ошибка загрузки"); }
     };
@@ -223,7 +189,6 @@
     window.deleteSelected = () => { if(state.selectedObj) { state.objects = state.objects.filter(o=>o!==state.selectedObj); state.selectedObj=null; saveToHistory(); render(); triggerSave(); } };
     window.toggleSidebar = () => document.getElementById('sidebar').classList.toggle('open');
 
-    // --- CANVAS ENGINE ---
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d');
     function resize() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; render(); }
@@ -246,8 +211,15 @@
         if (hit) {
             state.selectedObj = hit;
             const s = 35 / state.camera.zoom;
-            if (w.x > hit.x + hit.w - s && w.y > hit.y + hit.h - s) state.isResizing = true;
-            else { state.isDragging = true; if (hit.type === 'video') hit.el.play(); }
+            // RESIZE LOGIC (Video + Image)
+            if (w.x > hit.x + hit.w - s && w.y > hit.y + hit.h - s) {
+                state.isResizing = true;
+            } else {
+                state.isDragging = true;
+                if (hit.type === 'video') {
+                    if (hit.el.paused) hit.el.play(); else hit.el.pause();
+                }
+            }
             document.getElementById('download-btn').style.display = 'inline-block';
         } else { state.selectedObj = null; state.isDragging = true; document.getElementById('download-btn').style.display = 'none'; }
         render();
@@ -264,7 +236,8 @@
             if (state.mode === 'draw') state.lines[state.lines.length-1].points.push(w);
             else state.lines = state.lines.filter(l => !l.points.some(p => Math.hypot(p.x-w.x, p.y-w.y) < 25/state.camera.zoom));
         } else if (state.isResizing && state.selectedObj) {
-            state.selectedObj.w += dx; state.selectedObj.h = state.selectedObj.w / state.selectedObj.ratio;
+            state.selectedObj.w += dx;
+            state.selectedObj.h = state.selectedObj.w / state.selectedObj.ratio;
         } else if (state.isDragging) {
             if (state.selectedObj && state.mode === 'move') { state.selectedObj.x += dx; state.selectedObj.y += dy; }
             else { state.camera.x += m.x - state.lastMouse.x; state.camera.y += m.y - state.lastMouse.y; }
@@ -277,7 +250,6 @@
         state.isDrawing = state.isResizing = state.isDragging = false; state.lastMouse = null;
     });
 
-    // Zoom
     canvas.addEventListener('wheel', (e) => {
         e.preventDefault();
         const delta = e.deltaY > 0 ? 0.9 : 1.1;
@@ -289,21 +261,8 @@
         render();
     }, { passive: false });
 
-    // Touch Pinch
-    canvas.addEventListener('touchstart', (e) => {
-        if (e.touches.length === 2) {
-            touchStartDist = Math.hypot(e.touches[0].pageX - e.touches[1].pageX, e.touches[0].pageY - e.touches[1].pageY);
-            touchStartZoom = state.camera.zoom;
-        }
-    });
-    canvas.addEventListener('touchmove', (e) => {
-        if (e.touches.length === 2) {
-            e.preventDefault();
-            const dist = Math.hypot(e.touches[0].pageX - e.touches[1].pageX, e.touches[0].pageY - e.touches[1].pageY);
-            state.camera.zoom = touchStartZoom * (dist / touchStartDist);
-            render();
-        }
-    }, { passive: false });
+    canvas.addEventListener('touchstart', (e) => { if (e.touches.length === 2) { touchStartDist = Math.hypot(e.touches[0].pageX - e.touches[1].pageX, e.touches[0].pageY - e.touches[1].pageY); touchStartZoom = state.camera.zoom; } });
+    canvas.addEventListener('touchmove', (e) => { if (e.touches.length === 2) { e.preventDefault(); const dist = Math.hypot(e.touches[0].pageX - e.touches[1].pageX, e.touches[0].pageY - e.touches[1].pageY); state.camera.zoom = touchStartZoom * (dist / touchStartDist); render(); } }, { passive: false });
 
     function render() {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
