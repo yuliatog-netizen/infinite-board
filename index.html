@@ -3,22 +3,20 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Infinite Board v4.6</title>
+    <title>Infinite Board v4.7</title>
     <style>
         :root { --bg: #f0f0f0; --panel: #ffffff; --accent: #007bff; --text: #333; }
         [data-theme="dark"] { --bg: #1a1a1a; --panel: #333; --accent: #007bff; --text: #eee; }
         body, html { margin: 0; padding: 0; height: 100%; overflow: hidden; background: var(--bg); font-family: sans-serif; }
         
-        /* СИСТЕМА СЛОЕВ: 
-           1. Grid (z: 1)
-           2. DOM/YouTube (z: 10)
-           3. UI (z: 2000)
-           4. Drawing Canvas (z: 100) - управляется через JS
-        */
         #grid-canvas { position: absolute; inset: 0; z-index: 1; pointer-events: none; }
-        #dom-layer { position: absolute; inset: 0; z-index: 10; pointer-events: none; overflow: hidden; }
+        #dom-layer { position: absolute; inset: 0; z-index: 50; pointer-events: none; }
         #canvas { position: absolute; inset: 0; z-index: 100; touch-action: none; background: transparent; }
         
+        /* В режиме MOVE поднимаем YouTube выше холста, чтобы кнопки работали */
+        .mode-move #dom-layer { pointer-events: auto; z-index: 150; }
+        .mode-move #canvas { z-index: 100; }
+
         #ui-layer { position: fixed; top: 0; left: 0; width: 100%; pointer-events: none; z-index: 2000; display: flex; flex-direction: column; align-items: center; }
         .panel { pointer-events: auto; background: var(--panel); padding: 5px 12px; border-radius: 30px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); display: flex; gap: 6px; align-items: center; margin: 8px; border: 1px solid rgba(0,0,0,0.1); }
         
@@ -27,12 +25,12 @@
         
         .yt-wrapper { position: absolute; pointer-events: auto; background: #000; box-shadow: 0 5px 15px rgba(0,0,0,0.3); }
         .yt-wrapper iframe { width: 100%; height: 100%; border: none; }
-        .yt-overlay { position: absolute; inset: 0; z-index: 20; display: none; }
-        .mode-move .yt-overlay { display: block; cursor: move; }
+        .yt-overlay { position: absolute; inset: 0; z-index: 10; cursor: move; display: none; background: rgba(0,0,0,0); }
+        .mode-move .yt-overlay { display: block; } /* Оверлей только для перетаскивания */
 
         button { background: #eee; border: none; padding: 8px 12px; border-radius: 15px; cursor: pointer; font-weight: bold; color: var(--text); }
         button.active { background: var(--accent) !important; color: white !important; }
-        .board-item { padding: 10px; border-radius: 8px; cursor: pointer; margin-bottom: 5px; color: var(--text); border: 1px solid transparent; }
+        .board-item { padding: 10px; border-radius: 8px; cursor: pointer; margin-bottom: 5px; color: var(--text); border: 1px solid transparent; overflow: hidden; text-overflow: ellipsis; }
         .board-item.active { background: rgba(0,123,255,0.1); border-color: var(--accent); }
         #login-screen { position: fixed; inset: 0; background: var(--bg); z-index: 3000; display: flex; justify-content: center; align-items: center; flex-direction: column; }
     </style>
@@ -64,7 +62,7 @@
 </div>
 
 <div id="sidebar">
-    <h3>Мои Доски</h3>
+    <h3 style="margin-top:0">Мои Доски</h3>
     <div id="boards-list"></div>
     <button onclick="createNewBoard()" style="width:100%; background:var(--accent); color:white; margin-top:10px;">+ Новая</button>
     <button onclick="logout()" style="width:100%; margin-top:15px; opacity: 0.7;">Выход</button>
@@ -81,13 +79,15 @@
     import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
     import { getFirestore, doc, onSnapshot, updateDoc, collection, addDoc, query, where, getDocs } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
-    const app = initializeApp({
+    const firebaseConfig = {
         apiKey: "AIzaSyAYZY3gBo7uT-MSmgXnsZn3Y_q2zzU4OAM",
         authDomain: "infiniteboard-3197d.firebaseapp.com",
         projectId: "infiniteboard-3197d",
         storageBucket: "infiniteboard-3197d.firebasestorage.app",
         appId: "1:786069509066:web:ab900d2d7c952195067533"
-    });
+    };
+
+    const app = initializeApp(firebaseConfig);
     const auth = getAuth(app), db = getFirestore(app);
 
     let state = { mode: 'move', theme: 'light', camera: { x: window.innerWidth/2, y: window.innerHeight/2, zoom: 1 }, objects: [], lines: [], selectedObj: null };
@@ -104,9 +104,9 @@
     window.addEventListener('resize', resize);
     resize();
 
-    // --- YT HANDLER ---
+    // --- YT ---
     window.addYouTube = () => {
-        const url = prompt("Вставьте ссылку на YouTube:");
+        const url = prompt("Ссылка YouTube:");
         const id = url?.match(/(?:youtu\.be\/|youtube\.com\/(?:.*v=|.*\/|.*embed\/|.*shorts\/))([^?&]+)/);
         if (id) {
             const pos = { x: (window.innerWidth/2 - state.camera.x)/state.camera.zoom, y: (window.innerHeight/2 - state.camera.y)/state.camera.zoom };
@@ -117,23 +117,24 @@
 
     function syncDOMObjects(data) {
         const dataIds = data.map(o => o.url || o.ytId);
-        // Удаляем старые
-        state.objects.forEach(o => { if(o.dom && !dataIds.includes(o.url || o.ytId)) o.dom.remove(); });
-        state.objects = state.objects.filter(o => dataIds.includes(o.url || o.ytId) || !o.ytId);
-
-        data.forEach(obj => {
-            let ex = state.objects.find(o => (o.url === obj.url && o.url) || (o.ytId === obj.ytId && o.ytId));
-            if (ex) { 
-                Object.assign(ex, obj); 
+        // Удаляем лишние DOM-элементы
+        state.objects.forEach(o => { if(o.dom && !dataIds.includes(o.ytId)) { o.dom.remove(); } });
+        
+        // Очищаем локальный список и заменяем актуальным из БД
+        state.objects = data.map(obj => {
+            let existing = state.objects.find(o => (o.url === obj.url && o.url) || (o.ytId === obj.ytId && o.ytId));
+            if (existing) {
+                Object.assign(existing, obj);
+                return existing;
             } else {
                 if (obj.type === 'youtube') {
                     const wrap = document.createElement('div'); wrap.className = 'yt-wrapper';
-                    wrap.innerHTML = `<div class="yt-overlay"></div><iframe src="https://www.youtube.com/embed/${obj.ytId}?enablejsapi=1&rel=0" allow="autoplay; encrypted-media" allowfullscreen></iframe>`;
+                    wrap.innerHTML = `<div class="yt-overlay"></div><iframe src="https://www.youtube.com/embed/${obj.ytId}?enablejsapi=1" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe>`;
                     document.getElementById('dom-layer').appendChild(wrap);
                     obj.dom = wrap;
                 } else if (obj.type === 'image') { obj.el = new Image(); obj.el.src = obj.url; }
-                else if (obj.type === 'video') { obj.el = document.createElement('video'); obj.el.src = obj.url; obj.el.muted = true; obj.el.loop = true; obj.el.playsInline = true; obj.el.currentTime = 0.1; }
-                state.objects.push(obj);
+                else if (obj.type === 'video') { obj.el = document.createElement('video'); obj.el.src = obj.url; obj.el.muted = true; obj.el.loop = true; obj.el.playsInline = true; }
+                return obj;
             }
         });
         render();
@@ -148,12 +149,6 @@
         const hit = [...state.objects].reverse().find(o => w.x > o.x && w.x < o.x + o.w && w.y > o.y && w.y < o.y + o.h);
 
         if (state.mode !== 'move') {
-            if (hit?.type === 'youtube') {
-                // Если кликнули по YT в режиме рисования — пробрасываем клик
-                canvas.style.pointerEvents = 'none';
-                setTimeout(() => canvas.style.pointerEvents = 'auto', 500);
-                return;
-            }
             state.isDrawing = true;
             if (state.mode === 'draw') state.lines.push({ points: [w], color: state.theme==='light'?'#000':'#fff' });
             return;
@@ -163,7 +158,7 @@
         if (hit) {
             const s = 35 / state.camera.zoom;
             if (w.x > hit.x + hit.w - s && w.y > hit.y + hit.h - s) state.isResizing = true;
-            else { state.isDragging = true; if(hit.el && hit.type==='video') hit.el.paused ? hit.el.play() : hit.el.pause(); }
+            else state.isDragging = true;
         } else state.isDragging = true;
         render();
     });
@@ -189,8 +184,7 @@
 
     window.addEventListener('pointerup', () => { 
         if(state.isDragging || state.isResizing || state.isDrawing) saveAndSync();
-        state.isDragging = state.isResizing = state.isDrawing = false; 
-        state.lastMouse = null; 
+        state.isDragging = state.isResizing = state.isDrawing = false; state.lastMouse = null; 
     });
 
     canvas.addEventListener('wheel', e => {
@@ -204,20 +198,16 @@
         render();
     }, { passive: false });
 
-    // --- RENDER ---
     function render() {
-        // 1. Сетка (Grid Canvas)
         gCtx.clearRect(0, 0, gridCanvas.width, gridCanvas.height);
         const g = 50 * state.camera.zoom;
-        gCtx.beginPath(); gCtx.strokeStyle = state.theme==='light'?'#ddd':'#333'; gCtx.lineWidth = 1;
+        gCtx.beginPath(); gCtx.strokeStyle = state.theme==='light'?'#ddd':'#333';
         for(let x=state.camera.x%g; x<gridCanvas.width; x+=g){ gCtx.moveTo(x,0); gCtx.lineTo(x,gridCanvas.height); }
         for(let y=state.camera.y%g; y<gridCanvas.height; y+=g){ gCtx.moveTo(0,y); gCtx.lineTo(gridCanvas.width,y); }
         gCtx.stroke();
 
-        // 2. Рисование и Объекты (Main Canvas)
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         ctx.save(); ctx.translate(state.camera.x, state.camera.y); ctx.scale(state.camera.zoom, state.camera.zoom);
-        
         state.objects.forEach(obj => {
             if (obj.type === 'youtube' && obj.dom) {
                 obj.dom.style.transform = `translate(${obj.x * state.camera.zoom + state.camera.x}px, ${obj.y * state.camera.zoom + state.camera.y}px) scale(${state.camera.zoom})`;
@@ -226,46 +216,34 @@
             } else if (obj.el) {
                 ctx.drawImage(obj.el, obj.x, obj.y, obj.w, obj.h);
             }
-            // Рамка выбора
             if (state.selectedObj === obj && state.mode === 'move') {
                 ctx.strokeStyle = '#007bff'; ctx.lineWidth = 2/state.camera.zoom;
                 ctx.strokeRect(obj.x, obj.y, obj.w, obj.h);
-                ctx.fillStyle = '#007bff';
-                ctx.fillRect(obj.x + obj.w - 15/state.camera.zoom, obj.y + obj.h - 15/state.camera.zoom, 30/state.camera.zoom, 30/state.camera.zoom);
+                ctx.fillStyle = '#007bff'; ctx.fillRect(obj.x+obj.w-15/state.camera.zoom, obj.y+obj.h-15/state.camera.zoom, 30/state.camera.zoom, 30/state.camera.zoom);
             }
         });
-
         state.lines.forEach(l => {
             ctx.beginPath(); ctx.strokeStyle = l.color; ctx.lineWidth = 3/state.camera.zoom; ctx.lineCap='round';
             l.points.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); ctx.stroke();
         });
         ctx.restore();
-        if (state.objects.some(o => o.type === 'video' && o.el && !o.el.paused)) requestAnimationFrame(render);
     }
 
-    // --- FIREBASE OPS ---
+    // --- FIREBASE ---
     async function saveAndSync() {
         if (!currentBoardId) return;
         const cleanObjects = state.objects.map(({el, dom, ...o}) => o);
         await updateDoc(doc(db, "boards", currentBoardId), { objects: cleanObjects, lines: state.lines });
     }
 
-    async function loadBoardsList() {
-        const q = query(collection(db, "boards"), where("ownerId", "==", currentUser.uid));
-        const snap = await getDocs(q);
-        const list = document.getElementById('boards-list'); list.innerHTML = '';
-        snap.forEach(d => {
-            const item = document.createElement('div');
-            item.className = `board-item ${currentBoardId === d.id ? 'active' : ''}`;
-            item.innerText = d.data().name || "Доска";
-            item.onclick = () => openBoard(d.id);
-            list.appendChild(item);
-        });
-    }
-
     function openBoard(id) {
         if (unsubscribeBoard) unsubscribeBoard();
+        // Полная очистка перед загрузкой новой доски
+        document.getElementById('dom-layer').innerHTML = '';
+        state.objects = [];
+        state.lines = [];
         currentBoardId = id;
+        
         unsubscribeBoard = onSnapshot(doc(db, "boards", id), d => {
             if (d.exists() && !state.isDragging && !state.isResizing) {
                 state.lines = d.data().lines || [];
@@ -276,12 +254,18 @@
         document.getElementById('sidebar').classList.remove('open');
     }
 
-    window.createNewBoard = async () => {
-        const name = prompt("Название новой доски:");
-        if (!name) return;
-        const ref = await addDoc(collection(db, "boards"), { name, ownerId: currentUser.uid, objects: [], lines: [] });
-        openBoard(ref.id);
-    };
+    async function loadBoardsList() {
+        const q = query(collection(db, "boards"), where("ownerId", "==", currentUser.uid));
+        const snap = await getDocs(q);
+        const list = document.getElementById('boards-list'); list.innerHTML = '';
+        snap.forEach(d => {
+            const item = document.createElement('div');
+            item.className = `board-item ${currentBoardId === d.id ? 'active' : ''}`;
+            item.innerText = d.data().name || "Без названия";
+            item.onclick = () => openBoard(d.id);
+            list.appendChild(item);
+        });
+    }
 
     onAuthStateChanged(auth, user => {
         if (user) {
@@ -293,14 +277,18 @@
                     });
                 }
             });
-        } else { document.getElementById('login-screen').style.display='flex'; }
+        }
     });
 
-    // --- UI UTILS ---
     window.login = () => signInWithPopup(auth, new GoogleAuthProvider());
     window.logout = () => signOut(auth).then(() => location.reload());
-    window.setMode = m => { state.mode = m; document.body.className = 'mode-'+m; document.querySelectorAll('.panel button').forEach(b => b.classList.toggle('active', b.id === 'mode-'+m)); };
+    window.setMode = m => { state.mode = m; document.body.className = 'mode-'+m; document.querySelectorAll('.panel button').forEach(b => b.classList.toggle('active', b.id === 'mode-'+m)); render(); };
     window.toggleSidebar = () => document.getElementById('sidebar').classList.toggle('open');
+    window.createNewBoard = async () => {
+        const name = prompt("Название доски:"); if (!name) return;
+        const ref = await addDoc(collection(db, "boards"), { name, ownerId: currentUser.uid, objects: [], lines: [] });
+        openBoard(ref.id);
+    };
     window.resetCamera = () => { state.camera = { x: window.innerWidth/2, y: window.innerHeight/2, zoom: 1 }; render(); };
     window.toggleTheme = () => { state.theme = state.theme==='light'?'dark':'light'; document.body.setAttribute('data-theme', state.theme); render(); };
     window.deleteSelected = () => { if(state.selectedObj){ if(state.selectedObj.dom) state.selectedObj.dom.remove(); state.objects = state.objects.filter(o => o !== state.selectedObj); state.selectedObj = null; saveAndSync(); render(); } };
