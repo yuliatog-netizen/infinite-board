@@ -3,38 +3,29 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Infinite Board v3.5 (Full Fix)</title>
+    <title>Infinite Board v3.6 (Smart Zoom & Touch)</title>
     <style>
         :root { --bg: #f0f0f0; --panel: #ffffff; --accent: #007bff; --text: #333; --grid: #e0e0e0; }
         [data-theme="dark"] { --bg: #1a1a1a; --panel: #333; --accent: #007bff; --text: #eee; --grid: #333; }
-        
-        body, html { margin: 0; padding: 0; height: 100%; overflow: hidden; background: var(--bg); font-family: sans-serif; touch-action: none; transition: background 0.3s; }
-        
+        body, html { margin: 0; padding: 0; height: 100%; overflow: hidden; background: var(--bg); font-family: sans-serif; touch-action: none; }
         #ui-layer { position: fixed; top: 0; left: 0; width: 100%; pointer-events: none; z-index: 100; display: flex; flex-direction: column; align-items: center; }
         .panel { pointer-events: auto; background: var(--panel); padding: 5px 12px; border-radius: 30px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); display: flex; gap: 6px; align-items: center; margin: 8px; border: 1px solid rgba(0,0,0,0.1); }
-        
         #sidebar { position: fixed; top: 60px; left: 10px; width: 220px; background: var(--panel); border-radius: 15px; padding: 15px; pointer-events: auto; box-shadow: 0 4px 15px rgba(0,0,0,0.1); transform: translateX(-250px); transition: 0.3s; z-index: 101; max-height: 80vh; overflow-y: auto; }
         #sidebar.open { transform: translateX(0); }
-        
-        .board-item { padding: 10px; border-radius: 8px; cursor: pointer; margin-bottom: 5px; color: var(--text); border: 1px solid transparent; }
-        .board-item.active { border-color: var(--accent); background: rgba(0,123,255,0.1); }
-        
+        .board-item { padding: 10px; border-radius: 8px; cursor: pointer; margin-bottom: 5px; color: var(--text); }
+        .board-item.active { background: rgba(0,123,255,0.1); border: 1px solid var(--accent); }
         #login-screen { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: var(--bg); z-index: 2000; display: flex; justify-content: center; align-items: center; flex-direction: column; }
-        
         button { background: #eee; border: none; padding: 8px 12px; border-radius: 15px; cursor: pointer; color: #333; font-weight: bold; }
         button.active { background: var(--accent) !important; color: white !important; }
-        button:disabled { opacity: 0.3; cursor: not-allowed; }
-        
         #canvas { display: block; }
         .sync-indicator { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-left: 5px; }
-        .hint { position: fixed; bottom: 10px; left: 50%; transform: translateX(-50%); color: #888; font-size: 12px; pointer-events: none; }
     </style>
 </head>
 <body data-theme="light">
 
 <div id="login-screen">
     <h1 style="color:var(--text)">Infinite Board</h1>
-    <button onclick="login()" style="font-size:18px; padding: 15px 30px; background: #4285F4; color: white; border-radius: 8px;">Войти через Google</button>
+    <button onclick="login()" style="font-size:18px; padding: 15px 30px; background: #4285F4; color: white;">Войти через Google</button>
 </div>
 
 <div id="ui-layer" style="display:none;">
@@ -43,6 +34,7 @@
         <button id="mode-move" class="active" onclick="setMode('move')">🖐️</button>
         <button id="mode-draw" onclick="setMode('draw')">✏️</button>
         <button id="mode-eraser" onclick="setMode('eraser')">🧽</button>
+        <button onclick="resetCamera()">🎯</button>
         <hr style="width:1px; height:20px; border:none; background:#ccc;">
         <input type="file" id="file-input" hidden accept="image/*,video/*" onchange="handleFile(event)">
         <button onclick="document.getElementById('file-input').click()">➕</button>
@@ -59,12 +51,11 @@
 
 <div id="sidebar">
     <h3 style="color:var(--text); margin-top:0;">Мои Доски</h3>
-    <button onclick="createNewBoard()" style="width:100%; margin-bottom:10px; background:var(--accent); color:white;">+ Новая доска</button>
     <div id="boards-list"></div>
+    <button onclick="createNewBoard()" style="width:100%; margin-top:10px; background:var(--accent); color:white;">+ Новая доска</button>
     <button onclick="logout()" style="width:100%; margin-top:20px;">Выйти</button>
 </div>
 
-<div class="hint">Зум: колесо или 2 пальца | Перемещение: 🖐️</div>
 <canvas id="canvas"></canvas>
 
 <script type="module">
@@ -91,20 +82,14 @@
     let currentUser = null, currentBoardId = null, unsubscribeBoard = null;
     let state = { mode: 'move', theme: 'light', camera: { x: window.innerWidth/2, y: window.innerHeight/2, zoom: 1 }, objects: [], lines: [], selectedObj: null };
     let history = [], historyStep = -1;
+    let touchStartDist = 0, touchStartZoom = 1;
 
     // --- AUTH ---
     window.login = () => signInWithPopup(auth, new GoogleAuthProvider());
     window.logout = () => signOut(auth);
     onAuthStateChanged(auth, (user) => {
-        if (user) {
-            currentUser = user;
-            document.getElementById('login-screen').style.display = 'none';
-            document.getElementById('ui-layer').style.display = 'flex';
-            loadBoardsList();
-        } else {
-            document.getElementById('login-screen').style.display = 'flex';
-            document.getElementById('ui-layer').style.display = 'none';
-        }
+        if (user) { currentUser = user; document.getElementById('login-screen').style.display = 'none'; document.getElementById('ui-layer').style.display = 'flex'; loadBoardsList(); }
+        else { document.getElementById('login-screen').style.display = 'flex'; document.getElementById('ui-layer').style.display = 'none'; }
     });
 
     // --- BOARDS ---
@@ -119,7 +104,6 @@
             item.onclick = () => openBoard(d.id);
             list.appendChild(item);
         });
-        if (!currentBoardId && !snap.empty) openBoard(snap.docs[0].id);
     }
 
     window.createNewBoard = async () => {
@@ -139,14 +123,10 @@
                 state.objects = (data.objects || []).map(obj => {
                     const existing = state.objects.find(o => o.url === obj.url);
                     if (existing) return { ...obj, el: existing.el };
-                    if (obj.type === 'image') {
-                        const img = new Image(); img.src = obj.url; img.crossOrigin = "anonymous";
-                        return { ...obj, el: img };
-                    } else {
-                        const vid = document.createElement('video'); vid.src = obj.url; 
-                        vid.muted = true; vid.loop = true; vid.crossOrigin = "anonymous";
-                        return { ...obj, el: vid };
-                    }
+                    const el = obj.type === 'image' ? new Image() : document.createElement('video');
+                    el.src = obj.url; el.crossOrigin = "anonymous";
+                    if (obj.type === 'video') { el.muted = true; el.loop = true; }
+                    return { ...obj, el };
                 });
                 render();
             }
@@ -155,34 +135,17 @@
         document.getElementById('sidebar').classList.remove('open');
     }
 
-    // --- SYNC & HISTORY ---
+    // --- UTILS ---
     function saveToHistory() {
         historyStep++;
         history = history.slice(0, historyStep);
         history.push(JSON.stringify({ objects: state.objects.map(({el, ...o}) => o), lines: state.lines }));
     }
 
-    window.undo = () => {
-        if (historyStep > 0) {
-            historyStep--;
-            const data = JSON.parse(history[historyStep]);
-            state.lines = data.lines;
-            updateObjectsFromData(data.objects);
-            triggerSave();
-        }
-    };
+    window.undo = () => { if (historyStep > 0) { historyStep--; const data = JSON.parse(history[historyStep]); state.lines = data.lines; updateObjects(data.objects); triggerSave(); } };
+    window.redo = () => { if (historyStep < history.length - 1) { historyStep++; const data = JSON.parse(history[historyStep]); state.lines = data.lines; updateObjects(data.objects); triggerSave(); } };
 
-    window.redo = () => {
-        if (historyStep < history.length - 1) {
-            historyStep++;
-            const data = JSON.parse(history[historyStep]);
-            state.lines = data.lines;
-            updateObjectsFromData(data.objects);
-            triggerSave();
-        }
-    };
-
-    function updateObjectsFromData(data) {
+    function updateObjects(data) {
         state.objects = data.map(obj => {
             const existing = state.objects.find(o => o.url === obj.url);
             if (existing) return { ...obj, el: existing.el };
@@ -206,7 +169,6 @@
         }, 1000);
     }
 
-    // --- CLOUDINARY ---
     window.handleFile = async (e) => {
         const file = e.target.files[0];
         if (!file) return;
@@ -214,145 +176,10 @@
         const formData = new FormData();
         formData.append('file', file);
         formData.append('upload_preset', CLOUDINARY_PRESET);
-
         try {
             const response = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_NAME}/auto/upload`, { method: 'POST', body: formData });
             const data = await response.json();
-            let url = data.secure_url;
-            
-            // Auto-compression
-            url = url.replace('/upload/', '/upload/f_auto,q_auto' + (file.type.startsWith('video') ? ',vc_auto/' : '/'));
-
+            let url = data.secure_url.replace('/upload/', '/upload/f_auto,q_auto' + (file.type.startsWith('video') ? ',vc_auto/' : '/'));
             const pos = { x: (window.innerWidth/2 - state.camera.x)/state.camera.zoom, y: (window.innerHeight/2 - state.camera.y)/state.camera.zoom };
-
             if (file.type.startsWith('image')) {
-                const img = new Image(); img.src = url; img.crossOrigin = "anonymous";
-                img.onload = () => {
-                    state.objects.push({ type: 'image', x: pos.x, y: pos.y, w: img.width/2, h: img.height/2, url, ratio: img.width/img.height, el: img });
-                    saveToHistory(); render(); triggerSave();
-                };
-            } else {
-                const vid = document.createElement('video'); vid.src = url; vid.muted = true; vid.loop = true; vid.crossOrigin = "anonymous";
-                vid.onloadedmetadata = () => {
-                    const r = vid.videoWidth / vid.videoHeight;
-                    state.objects.push({ type: 'video', x: pos.x, y: pos.y, w: 320, h: 320/r, url, ratio: r, el: vid });
-                    saveToHistory(); render(); triggerSave();
-                };
-            }
-        } catch (err) { alert("Ошибка загрузки"); }
-    };
-
-    window.downloadCurrent = () => {
-        if (state.selectedObj) {
-            const a = document.createElement('a');
-            a.href = state.selectedObj.url;
-            a.download = 'board_file';
-            a.target = '_blank';
-            a.click();
-        }
-    };
-
-    // --- CANVAS ENGINE ---
-    const canvas = document.getElementById('canvas');
-    const ctx = canvas.getContext('2d');
-
-    window.toggleSidebar = () => document.getElementById('sidebar').classList.toggle('open');
-    window.setMode = (m) => { state.mode = m; document.querySelectorAll('.panel button').forEach(b => b.classList.remove('active')); if(document.getElementById('mode-'+m)) document.getElementById('mode-'+m).classList.add('active'); };
-    window.deleteSelected = () => { if(state.selectedObj) { state.objects = state.objects.filter(o=>o!==state.selectedObj); state.selectedObj=null; saveToHistory(); render(); triggerSave(); } };
-    window.toggleTheme = () => { state.theme = state.theme === 'light' ? 'dark' : 'light'; document.body.setAttribute('data-theme', state.theme); render(); };
-
-    function resize() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; render(); }
-    window.addEventListener('resize', resize);
-    resize();
-
-    // Input Handling
-    canvas.onpointerdown = (e) => {
-        const m = { x: e.clientX, y: e.clientY };
-        const w = { x: (m.x - state.camera.x)/state.camera.zoom, y: (m.y - state.camera.y)/state.camera.zoom };
-        state.lastMouse = m;
-        
-        if (state.mode === 'draw' || state.mode === 'eraser') {
-            state.isDrawing = true;
-            if (state.mode === 'draw') state.lines.push({ points: [w], color: state.theme === 'light' ? '#000' : '#fff' });
-            return;
-        }
-
-        const hit = [...state.objects].reverse().find(o => w.x > o.x && w.x < o.x + o.w && w.y > o.y && w.y < o.y + o.h);
-        if (hit) {
-            state.selectedObj = hit;
-            const s = 30 / state.camera.zoom;
-            if (w.x > hit.x + hit.w - s && w.y > hit.y + hit.h - s) state.isResizing = true;
-            else { state.isDragging = true; if (hit.type === 'video') hit.el.paused ? hit.el.play() : hit.el.pause(); }
-            document.getElementById('download-btn').style.display = 'inline-block';
-        } else { state.selectedObj = null; state.isDragging = true; document.getElementById('download-btn').style.display = 'none'; }
-        render();
-    };
-
-    canvas.onpointermove = (e) => {
-        const m = { x: e.clientX, y: e.clientY };
-        const dx = (m.x - state.lastMouse.x) / state.camera.zoom;
-        const dy = (m.y - state.lastMouse.y) / state.camera.zoom;
-        const w = { x: (m.x - state.camera.x)/state.camera.zoom, y: (m.y - state.camera.y)/state.camera.zoom };
-
-        if (state.isDrawing) {
-            if (state.mode === 'draw') state.lines[state.lines.length-1].points.push(w);
-            else state.lines = state.lines.filter(l => !l.points.some(p => Math.hypot(p.x-w.x, p.y-w.y) < 20/state.camera.zoom));
-        } else if (state.isResizing && state.selectedObj) {
-            state.selectedObj.w += dx; state.selectedObj.h = state.selectedObj.w / state.selectedObj.ratio;
-        } else if (state.isDragging) {
-            if (state.selectedObj && state.mode === 'move') { state.selectedObj.x += dx; state.selectedObj.y += dy; }
-            else { state.camera.x += m.x - state.lastMouse.x; state.camera.y += m.y - state.lastMouse.y; }
-        }
-        state.lastMouse = m; render();
-    };
-
-    window.onpointerup = () => { if (state.isDrawing || state.isResizing || (state.isDragging && state.selectedObj)) { saveToHistory(); triggerSave(); } state.isDrawing = state.isResizing = state.isDragging = false; };
-    
-    // Zoom handling
-    canvas.onwheel = (e) => {
-        e.preventDefault();
-        const delta = e.deltaY > 0 ? 0.9 : 1.1;
-        state.camera.zoom *= delta;
-        render();
-    };
-
-    function render() {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        
-        // Grid
-        const gSize = 40 * state.camera.zoom;
-        ctx.beginPath(); ctx.strokeStyle = state.theme === 'light' ? '#e8e8e8' : '#2a2a2a';
-        for (let x = state.camera.x % gSize; x < canvas.width; x += gSize) { ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); }
-        for (let y = state.camera.y % gSize; y < canvas.height; y += gSize) { ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); }
-        ctx.stroke();
-
-        ctx.save();
-        ctx.translate(state.camera.x, state.camera.y);
-        ctx.scale(state.camera.zoom, state.camera.zoom);
-
-        state.objects.forEach(obj => {
-            if (obj.el) ctx.drawImage(obj.el, obj.x, obj.y, obj.w, obj.h);
-            if (state.selectedObj === obj) {
-                ctx.strokeStyle = '#007bff'; ctx.lineWidth = 2/state.camera.zoom;
-                ctx.strokeRect(obj.x, obj.y, obj.w, obj.h);
-                // Resize Handle
-                ctx.fillStyle = '#007bff';
-                ctx.fillRect(obj.x + obj.w - 10/state.camera.zoom, obj.y + obj.h - 10/state.camera.zoom, 20/state.camera.zoom, 20/state.camera.zoom);
-            }
-        });
-
-        state.lines.forEach(l => {
-            ctx.beginPath(); ctx.strokeStyle = l.color || '#000'; ctx.lineWidth = 3/state.camera.zoom; ctx.lineCap='round';
-            ctx.moveTo(l.points[0].x, l.points[0].y);
-            l.points.forEach(p => ctx.lineTo(p.x, p.y));
-            ctx.stroke();
-        });
-
-        ctx.restore();
-        if (state.objects.some(o => o.type === 'video' && o.el && !o.el.paused)) requestAnimationFrame(render);
-    }
-    
-    saveToHistory(); // Initial state
-</script>
-</body>
-</html>
+                const img = new Image(); img.src = url; img.crossOrigin
