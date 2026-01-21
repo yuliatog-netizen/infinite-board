@@ -301,11 +301,15 @@
                 <button class="brush-btn" id="brush-pencil" onclick="setBrush('pencil')"
                     title="Карандаш">Карандаш</button>
                 <button class="brush-btn" id="brush-paint" onclick="setBrush('paint')" title="Краска">Краска</button>
-                <button class="brush-btn" id="brush-marker" onclick="setBrush('marker')" title="Маркер">Маркер</button>
                 <label class="pressure-toggle">
                     <input type="checkbox" id="pressure-sensitive" checked>
                     <span>Нажатие</span>
                 </label>
+            </div>
+            <!-- Eraser Controls -->
+            <div class="draw-controls" id="eraser-controls" style="display: none;">
+                <span style="font-size: 14px; color: var(--text);">Размер ластика:</span>
+                <input type="range" id="eraser-width-input" min="5" max="100" value="20" title="Размер ластика">
             </div>
             <div style="width: 1px; height: 20px; background: #ddd; margin: 0 5px;"></div>
             <button onclick="resetCamera()" title="Центр">🎯</button>
@@ -384,7 +388,8 @@
             drawWidth: 3,
             brushType: 'paint',
             pressureSensitive: true,
-            isPanning: false     // Для средней кнопки мыши
+            isPanning: false,
+            eraserWidth: 20
         };
         let currentUser = null, currentBoardId = null, unsubscribeBoard = null;
         let history = [], historyStep = -1;
@@ -583,7 +588,7 @@
                     state.lines[state.lines.length - 1].points.push({ x: w.x, y: w.y, p: pressure });
                 } else if (state.mode === 'eraser') {
                     // Improved eraser: remove line segments instead of entire lines
-                    const eraserRadius = 20 / state.camera.zoom;
+                    const eraserRadius = state.eraserWidth / state.camera.zoom;
                     const newLines = [];
 
                     state.lines.forEach(line => {
@@ -643,6 +648,13 @@
             const w = getWorldPos(e);
             state.lastMouse = m;
 
+            // Middle mouse button panning - available in all modes
+            if (e.button === 1) {
+                e.preventDefault();
+                state.isPanning = true;
+                return;
+            }
+
             // 1. Сначала проверяем ресайз УЖЕ выбранного объекта
             if (state.mode === 'move' && state.selectedObj && isHandleHit(state.selectedObj, w)) {
                 state.isResizing = true;
@@ -683,12 +695,6 @@
                 }
             }
             else if (state.mode === 'draw') {
-                // Check for middle mouse button (pan in draw mode)
-                if (e.button === 1) {
-                    state.isPanning = true;
-                    return;
-                }
-
                 state.isDrawing = true;
                 const pressure = e.pressure || 0.5; // Default to 0.5 if no pressure data
                 state.lines.push({
@@ -844,10 +850,12 @@
             document.querySelectorAll('.panel button').forEach(b => b.classList.toggle('active', b.id === 'mode-' + m));
             state.selectedObj = null;
 
-            // Show/hide drawing controls
             const drawControls = document.getElementById('draw-controls');
+            const eraserControls = document.getElementById('eraser-controls');
+
             if (m === 'draw') {
                 drawControls.style.display = 'flex';
+                eraserControls.style.display = 'none';
                 // Set initial color based on theme
                 if (!state.drawColor || state.drawColor === (state.theme === 'light' ? '#000000' : '#ffffff')) {
                     state.drawColor = state.theme === 'light' ? '#000000' : '#ffffff';
@@ -855,8 +863,12 @@
                 }
                 // Set active brush button
                 setBrush(state.brushType, true);
+            } else if (m === 'eraser') {
+                drawControls.style.display = 'none';
+                eraserControls.style.display = 'flex';
             } else {
                 drawControls.style.display = 'none';
+                eraserControls.style.display = 'none';
             }
 
             render();
@@ -1005,6 +1017,10 @@
 
         document.getElementById('pressure-sensitive').addEventListener('change', (e) => {
             state.pressureSensitive = e.target.checked;
+        });
+
+        document.getElementById('eraser-width-input').addEventListener('input', (e) => {
+            state.eraserWidth = parseInt(e.target.value);
         });
     </script>
 </body>
