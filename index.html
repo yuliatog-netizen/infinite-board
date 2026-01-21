@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Infinite Board v6.1</title>
+    <title>Infinite Board v7.0</title>
     <style>
         :root {
             --bg: #f4f4f9;
@@ -45,7 +45,8 @@
             z-index: 1000;
             display: flex;
             flex-direction: column;
-            align-items: center;
+            align-items: flex-start;
+            padding-left: 10px;
         }
 
         .panel {
@@ -58,6 +59,8 @@
             gap: 8px;
             align-items: center;
             margin-top: 10px;
+            flex-wrap: wrap;
+            max-width: 95vw;
         }
 
         button {
@@ -105,6 +108,36 @@
             font-size: 14px;
             padding: 5px 10px;
             min-width: 70px;
+        }
+
+        .pressure-toggle {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            font-size: 14px;
+            color: var(--text);
+            white-space: nowrap;
+        }
+
+        .pressure-toggle input[type="checkbox"] {
+            cursor: pointer;
+        }
+
+        @media (max-width: 768px) {
+            button {
+                font-size: 18px;
+                padding: 6px;
+            }
+
+            .draw-controls input[type="range"] {
+                width: 80px;
+            }
+
+            .brush-btn {
+                font-size: 12px;
+                padding: 4px 8px;
+                min-width: 60px;
+            }
         }
 
         #sidebar {
@@ -248,7 +281,7 @@
 <body class="mode-move">
 
     <div id="login-screen">
-        <h1 style="color:var(--text); margin-bottom: 20px;">Infinite Board v6.1</h1>
+        <h1 style="color:var(--text); margin-bottom: 20px;">Infinite Board v7.0</h1>
         <button class="login-btn" onclick="login()">Войти через Google</button>
     </div>
 
@@ -269,6 +302,10 @@
                     title="Карандаш">Карандаш</button>
                 <button class="brush-btn" id="brush-paint" onclick="setBrush('paint')" title="Краска">Краска</button>
                 <button class="brush-btn" id="brush-marker" onclick="setBrush('marker')" title="Маркер">Маркер</button>
+                <label class="pressure-toggle">
+                    <input type="checkbox" id="pressure-sensitive" checked>
+                    <span>Нажатие</span>
+                </label>
             </div>
             <div style="width: 1px; height: 20px; background: #ddd; margin: 0 5px;"></div>
             <button onclick="resetCamera()" title="Центр">🎯</button>
@@ -345,7 +382,9 @@
             prevDiff: -1,        // Для зума пальцами
             drawColor: '#000000',
             drawWidth: 3,
-            brushType: 'paint'
+            brushType: 'paint',
+            pressureSensitive: true,
+            isPanning: false     // Для средней кнопки мыши
         };
         let currentUser = null, currentBoardId = null, unsubscribeBoard = null;
         let history = [], historyStep = -1;
@@ -410,9 +449,7 @@
             // 3. Lines
             state.lines.forEach(l => {
                 ctx.save();
-                ctx.beginPath();
                 ctx.strokeStyle = l.color;
-                ctx.lineWidth = (l.width || 3) / state.camera.zoom;
 
                 // Apply brush-specific styles
                 const brushType = l.brushType || 'paint';
@@ -428,8 +465,30 @@
                     ctx.globalAlpha = 0.7;
                 }
 
-                l.points.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y));
-                ctx.stroke();
+                // Check if line has pressure data
+                const usePressure = l.pressureSensitive && l.points.length > 0 && l.points[0].p !== undefined;
+
+                if (usePressure) {
+                    // Draw segments with varying width based on pressure
+                    for (let i = 0; i < l.points.length - 1; i++) {
+                        const p1 = l.points[i];
+                        const p2 = l.points[i + 1];
+                        const avgPressure = (p1.p + p2.p) / 2;
+
+                        ctx.beginPath();
+                        ctx.lineWidth = ((l.width || 3) * avgPressure) / state.camera.zoom;
+                        ctx.moveTo(p1.x, p1.y);
+                        ctx.lineTo(p2.x, p2.y);
+                        ctx.stroke();
+                    }
+                } else {
+                    // Draw simple line without pressure
+                    ctx.beginPath();
+                    ctx.lineWidth = (l.width || 3) / state.camera.zoom;
+                    l.points.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y));
+                    ctx.stroke();
+                }
+
                 ctx.restore();
             });
             ctx.restore();
@@ -514,13 +573,14 @@
                     }
                 } else if (state.isMovingObj && state.selectedObj) {
                     state.selectedObj.x += dx; state.selectedObj.y += dy;
-                } else if (state.isDragging) {
+                } else if (state.isDragging || state.isPanning) {
                     state.camera.x += m.x - state.lastMouse.x;
                     state.camera.y += m.y - state.lastMouse.y;
                 }
             } else if (state.isDrawing) {
                 if (state.mode === 'draw') {
-                    state.lines[state.lines.length - 1].points.push(w);
+                    const pressure = e.pressure || 0.5;
+                    state.lines[state.lines.length - 1].points.push({ x: w.x, y: w.y, p: pressure });
                 } else if (state.mode === 'eraser') {
                     // Improved eraser: remove line segments instead of entire lines
                     const eraserRadius = 20 / state.camera.zoom;
@@ -623,12 +683,20 @@
                 }
             }
             else if (state.mode === 'draw') {
+                // Check for middle mouse button (pan in draw mode)
+                if (e.button === 1) {
+                    state.isPanning = true;
+                    return;
+                }
+
                 state.isDrawing = true;
+                const pressure = e.pressure || 0.5; // Default to 0.5 if no pressure data
                 state.lines.push({
-                    points: [w],
+                    points: [{ x: w.x, y: w.y, p: pressure }],
                     color: state.drawColor,
                     width: state.drawWidth,
-                    brushType: state.brushType
+                    brushType: state.brushType,
+                    pressureSensitive: state.pressureSensitive
                 });
             }
             else if (state.mode === 'eraser') {
@@ -644,7 +712,7 @@
                 state.lastPinchCenter = null;
             }
             if (state.isMovingObj || state.isResizing || state.isDrawing) saveHistoryAndSync();
-            state.isDragging = state.isMovingObj = state.isResizing = state.isDrawing = false;
+            state.isDragging = state.isMovingObj = state.isResizing = state.isDrawing = state.isPanning = false;
             state.lastMouse = null;
         };
         window.addEventListener('pointerup', handlePointerUp);
@@ -933,6 +1001,10 @@
 
         document.getElementById('draw-width').addEventListener('input', (e) => {
             state.drawWidth = parseInt(e.target.value);
+        });
+
+        document.getElementById('pressure-sensitive').addEventListener('change', (e) => {
+            state.pressureSensitive = e.target.checked;
         });
     </script>
 </body>
