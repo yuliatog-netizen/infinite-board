@@ -3,10 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Infinite Board v4.0</title>
+    <title>Infinite Board v4.1</title>
     <style>
-        :root { --bg: #f0f0f0; --panel: #ffffff; --accent: #007bff; --text: #333; --grid: #e0e0e0; }
-        [data-theme="dark"] { --bg: #1a1a1a; --panel: #333; --accent: #007bff; --text: #eee; --grid: #333; }
+        :root { --bg: #f0f0f0; --panel: #ffffff; --accent: #007bff; --text: #333; }
+        [data-theme="dark"] { --bg: #1a1a1a; --panel: #333; --accent: #007bff; --text: #eee; }
         body, html { margin: 0; padding: 0; height: 100%; overflow: hidden; background: var(--bg); font-family: sans-serif; }
         #login-screen { position: fixed; inset: 0; background: var(--bg); z-index: 2000; display: flex; justify-content: center; align-items: center; flex-direction: column; }
         #ui-layer { position: fixed; top: 0; left: 0; width: 100%; pointer-events: none; z-index: 100; display: flex; flex-direction: column; align-items: center; }
@@ -25,7 +25,7 @@
 
 <div id="login-screen">
     <h1 style="color:var(--text)">Infinite Board</h1>
-    <button onclick="login()" style="font-size:18px; padding: 15px 30px; background: #4285F4; color: white; border-radius: 10px;">Войти через Google</button>
+    <button onclick="login()" style="padding: 15px 30px; background: #4285F4; color: white; border-radius: 10px; font-weight: bold;">Войти через Google</button>
 </div>
 
 <div id="ui-layer" style="display:none;">
@@ -81,19 +81,47 @@
 
     let currentUser = null, currentBoardId = null, unsubscribeBoard = null;
     let state = { mode: 'move', theme: 'light', camera: { x: window.innerWidth/2, y: window.innerHeight/2, zoom: 1 }, objects: [], lines: [], selectedObj: null };
-    let history = [], historyStep = -1;
-    let touchStartDist = 0, touchStartZoom = 1;
+    
+    // --- HISTORY SYSTEM ---
+    let history = [], historyIndex = -1;
+    function pushHistory() {
+        const snap = JSON.stringify({ objects: state.objects.map(({el, ...o}) => o), lines: state.lines });
+        if (historyIndex >= 0 && snap === history[historyIndex]) return;
+        history = history.slice(0, historyIndex + 1);
+        history.push(snap);
+        historyIndex++;
+        if (history.length > 50) { history.shift(); historyIndex--; }
+    }
 
+    window.undo = () => {
+        if (historyIndex > 0) {
+            historyIndex--;
+            const data = JSON.parse(history[historyIndex]);
+            state.lines = data.lines;
+            updateObjects(data.objects);
+            triggerSave(false);
+        }
+    };
+
+    window.redo = () => {
+        if (historyIndex < history.length - 1) {
+            historyIndex++;
+            const data = JSON.parse(history[historyIndex]);
+            state.lines = data.lines;
+            updateObjects(data.objects);
+            triggerSave(false);
+        }
+    };
+
+    // --- FIREBASE ---
     window.login = () => signInWithPopup(auth, new GoogleAuthProvider());
     window.logout = () => signOut(auth);
-
     onAuthStateChanged(auth, (user) => {
         if (user) { currentUser = user; document.getElementById('login-screen').style.display = 'none'; document.getElementById('ui-layer').style.display = 'flex'; loadBoardsList(); }
         else { document.getElementById('login-screen').style.display = 'flex'; document.getElementById('ui-layer').style.display = 'none'; }
     });
 
     async function loadBoardsList() {
-        if(!currentUser) return;
         const q = query(collection(db, "boards"), where("ownerId", "==", currentUser.uid));
         const snap = await getDocs(q);
         const list = document.getElementById('boards-list'); list.innerHTML = '';
@@ -121,6 +149,7 @@
                 const data = d.data();
                 state.lines = data.lines || [];
                 updateObjects(data.objects || []);
+                if (history.length === 0) pushHistory(); // Запоминаем начальное состояние
             }
         });
         loadBoardsList();
@@ -130,17 +159,21 @@
     function updateObjects(data) {
         state.objects = data.map(obj => {
             const existing = state.objects.find(o => o.url === obj.url);
-            if (existing) return { ...obj, ...existing, x: obj.x, y: obj.y, w: obj.w, h: obj.h };
+            if (existing) return { ...obj, el: existing.el };
             const el = obj.type === 'image' ? new Image() : document.createElement('video');
             el.src = obj.url; el.crossOrigin = "anonymous";
-            if (obj.type === 'video') { el.muted = true; el.loop = true; el.playsInline = true; }
+            if (obj.type === 'video') { 
+                el.muted = true; el.loop = true; el.playsInline = true; el.preload = "auto";
+                el.currentTime = 0.1; // Показываем превью
+            }
             return { ...obj, el };
         });
         render();
     }
 
     let saveTimeout;
-    function triggerSave() {
+    function triggerSave(addToHistory = true) {
+        if (addToHistory) pushHistory();
         if (!currentBoardId) return;
         document.getElementById('status-dot').style.background = 'orange';
         clearTimeout(saveTimeout);
@@ -151,6 +184,7 @@
         }, 1000);
     }
 
+    // --- CORE HANDLERS ---
     window.handleFile = async (e) => {
         const file = e.target.files[0];
         if (!file) return;
@@ -167,19 +201,24 @@
                 const img = new Image(); img.src = url; img.crossOrigin = "anonymous";
                 img.onload = () => { state.objects.push({ type: 'image', x: pos.x, y: pos.y, w: img.width/2, h: img.height/2, url, ratio: img.width/img.height, el: img }); triggerSave(); render(); };
             } else {
-                const vid = document.createElement('video'); vid.src = url; vid.muted = true; vid.loop = true; vid.crossOrigin = "anonymous"; vid.playsInline = true;
-                vid.onloadedmetadata = () => { const r = vid.videoWidth/vid.videoHeight; state.objects.push({ type: 'video', x: pos.x, y: pos.y, w: 320, h: 320/r, url, ratio: r, el: vid }); triggerSave(); render(); };
+                const vid = document.createElement('video'); vid.src = url; vid.muted = true; vid.loop = true; vid.crossOrigin = "anonymous"; vid.playsInline = true; vid.preload = "auto";
+                vid.onloadedmetadata = () => { 
+                    vid.currentTime = 0.1;
+                    const r = vid.videoWidth/vid.videoHeight; 
+                    state.objects.push({ type: 'video', x: pos.x, y: pos.y, w: 320, h: 320/r, url, ratio: r, el: vid }); 
+                    triggerSave(); render(); 
+                };
             }
         } catch (err) { alert("Ошибка загрузки"); }
     };
 
-    window.downloadCurrent = () => { if (state.selectedObj) window.open(state.selectedObj.url, '_blank'); };
     window.resetCamera = () => { state.camera = { x: window.innerWidth/2, y: window.innerHeight/2, zoom: 1 }; render(); };
     window.toggleTheme = () => { state.theme = state.theme === 'light' ? 'dark' : 'light'; document.body.setAttribute('data-theme', state.theme); render(); };
     window.setMode = (m) => { state.mode = m; document.querySelectorAll('.panel button').forEach(b => b.classList.remove('active')); document.getElementById('mode-'+m).classList.add('active'); };
     window.deleteSelected = () => { if(state.selectedObj) { state.objects = state.objects.filter(o=>o!==state.selectedObj); state.selectedObj=null; triggerSave(); render(); } };
     window.toggleSidebar = () => document.getElementById('sidebar').classList.toggle('open');
 
+    // --- ENGINE ---
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d');
     function resize() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; render(); }
@@ -203,7 +242,7 @@
             if (w.x > hit.x + hit.w - s && w.y > hit.y + hit.h - s) state.isResizing = true;
             else { state.isDragging = true; if (hit.type === 'video') hit.el.paused ? hit.el.play() : hit.el.pause(); }
             document.getElementById('download-btn').style.display = 'inline-block';
-        } else { state.selectedObj = null; state.isDragging = true; document.getElementById('download-btn').style.display = 'none'; }
+        } else { state.selectedObj = null; state.isDragging = true; }
         render();
     });
 
@@ -226,25 +265,16 @@
     });
 
     window.addEventListener('pointerup', () => { if (state.isDrawing || state.isResizing || (state.isDragging && state.selectedObj)) triggerSave(); state.isDrawing = state.isResizing = state.isDragging = false; state.lastMouse = null; });
-    canvas.addEventListener('wheel', (e) => { e.preventDefault(); const delta = e.deltaY > 0 ? 0.9 : 1.1; const wX = (e.clientX - state.camera.x) / state.camera.zoom; const wY = (e.clientY - state.camera.y) / state.camera.zoom; state.camera.zoom *= delta; state.camera.x = e.clientX - wX * state.camera.zoom; state.camera.y = e.clientY - wY * state.camera.zoom; render(); }, { passive: false });
+    canvas.addEventListener('wheel', (e) => { e.preventDefault(); const d = e.deltaY > 0 ? 0.9 : 1.1; const wX = (e.clientX - state.camera.x) / state.camera.zoom; const wY = (e.clientY - state.camera.y) / state.camera.zoom; state.camera.zoom *= d; state.camera.x = e.clientX - wX * state.camera.zoom; state.camera.y = e.clientY - wY * state.camera.zoom; render(); }, { passive: false });
     canvas.addEventListener('touchstart', (e) => { if (e.touches.length === 2) { touchStartDist = Math.hypot(e.touches[0].pageX - e.touches[1].pageX, e.touches[0].pageY - e.touches[1].pageY); touchStartZoom = state.camera.zoom; } });
     canvas.addEventListener('touchmove', (e) => { if (e.touches.length === 2) { e.preventDefault(); const dist = Math.hypot(e.touches[0].pageX - e.touches[1].pageX, e.touches[0].pageY - e.touches[1].pageY); state.camera.zoom = touchStartZoom * (dist / touchStartDist); render(); } }, { passive: false });
 
-    function drawVideoIcon(obj) {
-        if (obj.type !== 'video') return;
-        const centerX = obj.x + obj.w / 2;
-        const centerY = obj.y + obj.h / 2;
-        const size = Math.min(obj.w, obj.h) * 0.2;
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
-        ctx.beginPath();
-        ctx.arc(centerX, centerY, size, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.fillStyle = '#333';
-        ctx.beginPath();
-        ctx.moveTo(centerX - size * 0.3, centerY - size * 0.5);
-        ctx.lineTo(centerX + size * 0.5, centerY);
-        ctx.lineTo(centerX - size * 0.3, centerY + size * 0.5);
-        ctx.fill();
+    function drawVideoUI(obj) {
+        if (obj.type !== 'video' || (obj.el && !obj.el.paused)) return;
+        const cx = obj.x + obj.w / 2, cy = obj.y + obj.h / 2, r = Math.min(obj.w, obj.h) * 0.15;
+        ctx.fillStyle = '#ff0000'; ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = 'white'; ctx.beginPath();
+        ctx.moveTo(cx - r*0.3, cy - r*0.5); ctx.lineTo(cx + r*0.5, cy); ctx.lineTo(cx - r*0.3, cy + r*0.5); ctx.fill();
     }
 
     function render() {
@@ -254,17 +284,13 @@
         for (let x = state.camera.x % gSize; x < canvas.width; x += gSize) { ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); }
         for (let y = state.camera.y % gSize; y < canvas.height; y += gSize) { ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); }
         ctx.stroke();
-        ctx.save();
-        ctx.translate(state.camera.x, state.camera.y);
-        ctx.scale(state.camera.zoom, state.camera.zoom);
+        ctx.save(); ctx.translate(state.camera.x, state.camera.y); ctx.scale(state.camera.zoom, state.camera.zoom);
         state.objects.forEach(obj => {
-            if (obj.el) { try { ctx.drawImage(obj.el, obj.x, obj.y, obj.w, obj.h); } catch(e) {} }
-            if (obj.type === 'video' && (!obj.el || obj.el.paused)) drawVideoIcon(obj);
+            if (obj.el) try { ctx.drawImage(obj.el, obj.x, obj.y, obj.w, obj.h); } catch(e) {}
+            drawVideoUI(obj);
             if (state.selectedObj === obj) {
-                ctx.strokeStyle = '#007bff'; ctx.lineWidth = 2/state.camera.zoom;
-                ctx.strokeRect(obj.x, obj.y, obj.w, obj.h);
-                ctx.fillStyle = '#007bff';
-                ctx.fillRect(obj.x + obj.w - 20/state.camera.zoom, obj.y + obj.h - 20/state.camera.zoom, 40/state.camera.zoom, 40/state.camera.zoom);
+                ctx.strokeStyle = '#007bff'; ctx.lineWidth = 2/state.camera.zoom; ctx.strokeRect(obj.x, obj.y, obj.w, obj.h);
+                ctx.fillStyle = '#007bff'; ctx.fillRect(obj.x + obj.w - 20/state.camera.zoom, obj.y + obj.h - 20/state.camera.zoom, 40/state.camera.zoom, 40/state.camera.zoom);
             }
         });
         state.lines.forEach(l => {
